@@ -1,6 +1,7 @@
 "use client";
 
 import ImportPanel from "@/components/Import/ImportPanel";
+import UniformRequestForm from "@/components/UniformRequest/UniformRequestForm";
 import { useState } from "react";
 
 type DashboardSection = "importData" | "createUniformRequest" | "trackRequestStatus";
@@ -73,12 +74,7 @@ export default function DashboardPage() {
           {activeSection === "importData" ? (
             <ImportPanel />
           ) : activeSection === "createUniformRequest" ? (
-            <section className="rounded-lg border bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Create Uniform Request</h2>
-              <p className="mt-2 text-sm text-slate-600">
-                This section is ready for your uniform request form.
-              </p>
-            </section>
+            <UniformRequestForm />
           ) : activeSection === "trackRequestStatus" ? (
             <section className="rounded-lg border bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold">Track Request Status</h2>

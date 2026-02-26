@@ -1,56 +1,23 @@
 import { NextResponse } from "next/server";
-import * as csv from "csv-parse/sync";
 import { prisma } from "@/lib/prisma";
+import { getFieldValue, normalizeForKey, parseCsvRecords, type ParsedRow } from "@/utils/importCsv";
 
-type ParsedRow = Record<string, string | undefined>;
 type InvalidRow = { rowNumber: number; errors: string[]; row: ParsedRow };
 type StaffRoleValue = "STAFF" | "MANAGER" | "CASUAL";
-type ImportDbClient = {
-  store: {
-    findMany: (args: { select: { id: true; name: true } }) => Promise<Array<{ id: number; name: string }>>;
-    create: (args: { data: { name: string } }) => Promise<{ id: number; name: string }>;
-  };
-  staff: {
-    findMany: (args: {
-      where: { storeId: number };
-      select: { displayName: true };
-    }) => Promise<Array<{ displayName: string }>>;
-    create: (args: {
-      data: { displayName: string; role: StaffRoleValue; storeId: number };
-    }) => Promise<unknown>;
-  };
-};
 type ValidStaffRow = {
   rowNumber: number;
   displayName: string;
   role: StaffRoleValue;
-  store: string;
+  storeName: string;
   rawRow: ParsedRow;
 };
 
-const allowedRoles = new Set(["staff", "manager", "casual"]);
-const roleMap: Record<string, StaffRoleValue> = {
-  staff: "STAFF",
-  manager: "MANAGER",
-  casual: "CASUAL",
-};
-const DISPLAY_NAME_KEYS = ["displayName", "display_name", "Display Name", "name"];
-const STORE_KEYS = ["store", "Store", "storeName", "store_name"];
-const ROLE_KEYS = ["role", "Role"];
-
-const normalizeValue = (value: string | undefined) => (value ?? "").trim();
-const normalizeForKey = (value: string) =>
-  value
-    .normalize("NFKC")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-const getFieldValue = (row: ParsedRow, keys: string[]) => {
-  for (const key of keys) {
-    const value = normalizeValue(row[key]);
-    if (value) return value;
+const parseRole = (value: string): StaffRoleValue | null => {
+  const normalized = normalizeForKey(value).toUpperCase();
+  if (normalized === "STAFF" || normalized === "MANAGER" || normalized === "CASUAL") {
+    return normalized;
   }
-  return "";
+  return null;
 };
 
 const buildErrorResponse = (message: string, status = 400) =>
@@ -84,39 +51,31 @@ export async function POST(req: Request) {
 
   try {
     const text = await file.text();
-    const records = csv.parse(text, {
-      columns: true,
-      skip_empty_lines: true,
-      bom: true,
-      trim: true,
-    }) as ParsedRow[];
+    let records: ParsedRow[] = [];
+    try {
+      records = parseCsvRecords(text);
+    } catch (error) {
+      const parseError = error instanceof Error ? error.message : "Unknown CSV parser error";
+      return buildErrorResponse(`Unable to parse CSV. ${parseError}`);
+    }
 
     const invalidRows: InvalidRow[] = [];
     const validRows: ValidStaffRow[] = [];
-    const seenStaffKeys = new Set<string>();
 
     for (const [index, rawRow] of records.entries()) {
       const rowNumber = index + 2;
       const rowErrors: string[] = [];
 
-      const displayName = getFieldValue(rawRow, DISPLAY_NAME_KEYS);
-      const store = getFieldValue(rawRow, STORE_KEYS);
-      const role = getFieldValue(rawRow, ROLE_KEYS).toLowerCase();
+      const displayName = getFieldValue(rawRow, ["display name", "display_name", "name", "staff name"]);
+      const roleRaw = getFieldValue(rawRow, ["role"]);
+      const storeName = getFieldValue(rawRow, ["store", "store name"]);
 
       if (!displayName) rowErrors.push("Missing Display Name");
-      if (!store) rowErrors.push("Missing store");
-      if (!role) {
-        rowErrors.push("Missing role");
-      } else if (!allowedRoles.has(role)) {
-        rowErrors.push("Role must be staff, manager, or casual");
-      }
+      if (!storeName) rowErrors.push("Missing Store");
 
-      // Duplicate in the same file is based on staff name + store.
-      const duplicateKey =
-        displayName && store ? `${normalizeForKey(displayName)}|${normalizeForKey(store)}` : "";
-      if (duplicateKey && seenStaffKeys.has(duplicateKey)) {
-        rowErrors.push("Duplicate staff name in same store (file)");
-      }
+      const role = roleRaw ? parseRole(roleRaw) : null;
+      if (!roleRaw) rowErrors.push("Missing Role");
+      else if (!role) rowErrors.push("Role must be one of: STAFF, MANAGER, CASUAL");
 
       if (rowErrors.length > 0) {
         invalidRows.push({ rowNumber, errors: rowErrors, row: rawRow });
@@ -126,62 +85,62 @@ export async function POST(req: Request) {
       validRows.push({
         rowNumber,
         displayName,
-        role: roleMap[role],
-        store,
+        role: role as StaffRoleValue,
+        storeName,
         rawRow,
       });
-      if (duplicateKey) seenStaffKeys.add(duplicateKey);
     }
+
+    const existingStores = await prisma.store.findMany({
+      select: { id: true, name: true },
+    });
+    const storeByNameKey = new Map(
+      existingStores.map((store) => [normalizeForKey(store.name), { id: store.id, name: store.name }])
+    );
+    const existingStaffNamesByStoreId = new Map<number, Set<string>>();
 
     let success = 0;
     let skipped = 0;
-    const db = prisma as unknown as ImportDbClient;
-    const storeRows = await db.store.findMany({ select: { id: true, name: true } });
-    const storeIdByNormalizedName = new Map<string, number>();
-    for (const store of storeRows) {
-      storeIdByNormalizedName.set(normalizeForKey(store.name), store.id);
-    }
-    const storeStaffCache = new Map<number, Set<string>>();
+
     for (const row of validRows) {
       try {
-        const normalizedStore = normalizeForKey(row.store);
-        let storeId = storeIdByNormalizedName.get(normalizedStore);
-        if (!storeId) {
-          const createdStore = await db.store.create({ data: { name: row.store.trim() } });
-          storeId = createdStore.id;
-          storeIdByNormalizedName.set(normalizedStore, storeId);
+        const storeKey = normalizeForKey(row.storeName);
+        let store = storeByNameKey.get(storeKey);
+        if (!store) {
+          const createdStore = await prisma.store.create({ data: { name: row.storeName.trim() } });
+          store = { id: createdStore.id, name: createdStore.name };
+          storeByNameKey.set(storeKey, store);
         }
 
-        let existingKeys = storeStaffCache.get(storeId);
-        if (!existingKeys) {
-          const existingRows = await db.staff.findMany({
-            where: { storeId },
-            select: { displayName: true },
+        let existingStaffNameKeys = existingStaffNamesByStoreId.get(store.id);
+        if (!existingStaffNameKeys) {
+          const existingStaff = await prisma.staff.findMany({
+            where: { storeId: store.id },
+            select: { staffName: true },
           });
-          existingKeys = new Set(existingRows.map((staff) => normalizeForKey(staff.displayName)));
-          storeStaffCache.set(storeId, existingKeys);
+          existingStaffNameKeys = new Set(existingStaff.map((staff) => normalizeForKey(staff.staffName)));
+          existingStaffNamesByStoreId.set(store.id, existingStaffNameKeys);
         }
 
-        // Duplicate in DB is based on staff name + store.
-        const dbDuplicateKey = normalizeForKey(row.displayName);
-        if (existingKeys.has(dbDuplicateKey)) {
+        const staffNameKey = normalizeForKey(row.displayName);
+        if (existingStaffNameKeys.has(staffNameKey)) {
           skipped++;
           invalidRows.push({
             rowNumber: row.rowNumber,
-            errors: ["Duplicate staff name in same store (database)"],
+            errors: ["Staff already exists in this store."],
             row: row.rawRow,
           });
           continue;
         }
 
-        await db.staff.create({
+        await prisma.staff.create({
           data: {
-            displayName: row.displayName,
+            staffName: row.displayName,
             role: row.role,
-            storeId,
+            storeId: store.id,
           },
         });
-        existingKeys.add(dbDuplicateKey);
+        existingStaffNameKeys.add(staffNameKey);
         success++;
       } catch {
         invalidRows.push({
@@ -194,6 +153,15 @@ export async function POST(req: Request) {
 
     const valid = validRows.length;
     const failed = invalidRows.length;
+    const errorCounts = new Map<string, number>();
+    for (const invalidRow of invalidRows) {
+      for (const error of invalidRow.errors) {
+        errorCounts.set(error, (errorCounts.get(error) ?? 0) + 1);
+      }
+    }
+    const summarizedErrors = Array.from(errorCounts.entries()).map(([error, count]) =>
+      count > 1 ? `${error} (${count} rows)` : error
+    );
     return NextResponse.json({
       importType: "staff",
       summary: {
@@ -207,11 +175,15 @@ export async function POST(req: Request) {
         failed,
       },
       invalidRows,
-      errors: invalidRows.flatMap((entry) =>
-        entry.errors.map((err) => `Row ${entry.rowNumber}: ${err}`)
-      ),
+      errors: summarizedErrors,
+      notices: [],
     });
   } catch {
-    return buildErrorResponse("Unable to parse CSV. Check the file format and headers.");
+    return buildErrorResponse("Staff import failed unexpectedly.");
   }
+
 }
+
+
+
+

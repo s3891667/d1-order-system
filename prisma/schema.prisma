@@ -68,7 +68,7 @@ model Store {
 
 model Staff {
   id          Int       @id @default(autoincrement())
-  displayName String
+  staffName String
   role        StaffRole
   storeId     Int
   createdAt   DateTime  @default(now())
