@@ -15,7 +15,7 @@ export default function Footer() {
 					<div className="flex items-center justify-between">
 						<a href="/" className="flex items-center mb-4 sm:mb-0 space-x-3 rtl:space-x-reverse">
 							<Image src="/d1storelogo.jpg"
-								width={100} height={200} className="h-8" alt="RMIT Logo" />
+								width={160} height={52} className="h-8" alt="RMIT Logo" />
 							<span className="self-center text-2xl font-semibold whitespace-nowrap dark:text-white">Flowbite</span>
 						</a>
 

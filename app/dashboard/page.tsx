@@ -3,17 +3,60 @@
 import ImportPanel from "@/components/Import/ImportPanel";
 import UniformRequestForm from "@/components/UniformRequest/UniformRequestForm";
 import UniformRequestStatusView from "@/components/UniformRequest/UniformRequestStatusView";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-type DashboardSection = "importData" | "createUniformRequest" | "trackRequestStatus";
+type AppRole = "admin" | "dispatchAdmin";
+type DashboardSection =
+  | "importData"
+  | "createUniformRequest"
+  | "trackRequestStatus"
+  | "ordersManagement";
+
+function OrdersManagementPlaceholder() {
+  return (
+    <section className="rounded-lg border bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold">Orders Management</h2>
+      <p className="mt-2 text-sm text-slate-600">
+        Dispatch team section placeholder. We can add form fields and workflow details here next.
+      </p>
+    </section>
+  );
+}
 
 export default function DashboardPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeSection, setActiveSection] = useState<DashboardSection>("importData");
+  const [role, setRole] = useState<AppRole | null>(null);
+  const isDispatchAdmin = role === "dispatchAdmin";
+  const visibleSection = isDispatchAdmin
+    ? activeSection === "importData" || activeSection === "createUniformRequest"
+      ? "trackRequestStatus"
+      : activeSection
+    : activeSection === "ordersManagement"
+      ? "importData"
+      : activeSection;
+
+  useEffect(() => {
+    const loadSession = async () => {
+      const res = await fetch("/api/session/current", { credentials: "include" });
+      if (!res.ok) {
+        setRole(null);
+        return;
+      }
+
+      const body = (await res.json()) as {
+        authenticated: boolean;
+        user?: { role?: AppRole } | null;
+      };
+      setRole(body.authenticated ? body.user?.role ?? null : null);
+    };
+
+    loadSession();
+  }, []);
 
   const menuItemClass = (section: DashboardSection) =>
     `block w-full rounded-md px-3 py-2 text-left text-sm ${
-      activeSection === section ? "bg-slate-100 font-medium text-slate-900" : "hover:bg-slate-100"
+      visibleSection === section ? "bg-slate-100 font-medium text-slate-900" : "hover:bg-slate-100"
     }`;
 
   return (
@@ -30,9 +73,11 @@ export default function DashboardPage() {
             <span className="mt-1 block h-0.5 w-5 bg-slate-800" />
             <span className="mt-1 block h-0.5 w-5 bg-slate-800" />
           </button>
-          <h1 className="text-lg font-semibold">Manager Dashboard</h1>
+          <h1 className="text-lg font-semibold">Dashboard</h1>
         </div>
-        <span className="text-sm text-slate-500">Welcome, Manager</span>
+        <span className="text-sm text-slate-500">
+          {isDispatchAdmin ? "Welcome, Dispatch Admin" : "Welcome, Admin"}
+        </span>
       </header>
 
       <div className="flex min-h-[calc(100vh-57px)]">
@@ -46,20 +91,24 @@ export default function DashboardPage() {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Menu
               </p>
-              <button
-                type="button"
-                onClick={() => setActiveSection("importData")}
-                className={menuItemClass("importData")}
-              >
-                Import Data
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSection("createUniformRequest")}
-                className={menuItemClass("createUniformRequest")}
-              >
-                Create Uniform Request
-              </button>
+              {!isDispatchAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("importData")}
+                  className={menuItemClass("importData")}
+                >
+                  Import Data
+                </button>
+              )}
+              {!isDispatchAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("createUniformRequest")}
+                  className={menuItemClass("createUniformRequest")}
+                >
+                  Create Uniform Request
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setActiveSection("trackRequestStatus")}
@@ -67,17 +116,28 @@ export default function DashboardPage() {
               >
                 Track Request Status
               </button>
+              {isDispatchAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("ordersManagement")}
+                  className={menuItemClass("ordersManagement")}
+                >
+                  Orders Management
+                </button>
+              )}
             </nav>
           </div>
         </aside>
 
         <main className="min-w-0 flex-1 p-4 md:p-6">
-          {activeSection === "importData" ? (
+          {!isDispatchAdmin && visibleSection === "importData" ? (
             <ImportPanel />
-          ) : activeSection === "createUniformRequest" ? (
+          ) : !isDispatchAdmin && visibleSection === "createUniformRequest" ? (
             <UniformRequestForm />
-          ) : activeSection === "trackRequestStatus" ? (
+          ) : visibleSection === "trackRequestStatus" ? (
             <UniformRequestStatusView />
+          ) : visibleSection === "ordersManagement" && isDispatchAdmin ? (
+            <OrdersManagementPlaceholder />
           ) : null}
         </main>
       </div>

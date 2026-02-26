@@ -1,140 +1,101 @@
 "use client";
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type AppRole = "admin" | "dispatchAdmin";
+
 export default function LoginForm() {
-	//const recaptchaRef = useRef<ReCAPTCHA>(null);
-	const [isVerified, setIsVerified] = useState(false);
-	const [role, setRole] = useState<"manager" | "staff">("manager");
-	const router = useRouter();
-	const [loginSuccess, setLoginSuccess] = useState(false);
+  const [role, setRole] = useState<AppRole>("admin");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-	// Handle reCAPTCHA
-	const handleCaptchaSubmission = async (token: string | null) => {
-		if (token) {
-			setIsVerified(true); // Trust that reCAPTCHA worked on client
-		} else {
-			setIsVerified(false);
-		}
-		try {
-			if (token) {
-				await fetch("/api", {
-					method: "POST",
-					headers: {
-						Accept: "application/json",
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({ token }),
-				});
-				setIsVerified(true);
-			}
-		} catch {
-			setIsVerified(false);
-		}
-	};
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError("");
+    setIsSubmitting(true);
 
-	const handleChange = (token: string | null) => {
-		handleCaptchaSubmission(token);
-	};
+    const form = e.currentTarget;
+    const email = (form.elements.namedItem("email") as HTMLInputElement).value.trim();
+    const password = (form.elements.namedItem("password") as HTMLInputElement).value;
 
-	const handleExpired = () => {
-		setIsVerified(false);
-	};
+    try {
+      const res = await fetch("/api/session/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, role }),
+      });
 
-	//  Async function to handle login
-	const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-		e.preventDefault();
-		if (!isVerified) return;
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Invalid credentials");
+      }
 
-		const form = e.currentTarget;
-		const emailOrUsername = (form.elements.namedItem("emailOrUsername") as HTMLInputElement).value;
-		const password = (form.elements.namedItem("password") as HTMLInputElement).value;
+      router.push("/dashboard");
+      router.refresh();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Login failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-		try {
-			console.log("Trying to login with:", { emailOrUsername, password, role });
+  return (
+    <form onSubmit={handleLogin}>
+      <div className="mb-4 flex justify-center space-x-4 text-black">
+        <button
+          type="button"
+          className={`rounded px-4 py-2 ${role === "admin" ? "bg-blue-500 text-white" : "bg-gray-200 text-black"}`}
+          onClick={() => setRole("admin")}
+        >
+          Admin
+        </button>
+        <button
+          type="button"
+          className={`rounded px-4 py-2 ${role === "dispatchAdmin" ? "bg-blue-500 text-white" : "bg-gray-200 text-black"}`}
+          onClick={() => setRole("dispatchAdmin")}
+        >
+          Dispatch Admin
+        </button>
+      </div>
 
-			const res = await fetch("http://localhost:5000/api/users/login", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email: emailOrUsername, password, role }),
-			});
+      <div className="mb-4">
+        <label htmlFor="email" className="mb-1 block text-sm font-medium text-black">
+          Email
+        </label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          placeholder="Enter your email"
+          required
+          className="w-full rounded border p-2 text-black"
+        />
+      </div>
 
-			if (!res.ok) {
-				throw new Error("Invalid credentials");
-			}
+      <div className="mb-4">
+        <label htmlFor="password" className="mb-1 block text-sm font-medium text-black">
+          Password
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          placeholder="Enter your password"
+          required
+          className="w-full rounded border p-2 text-black"
+        />
+      </div>
 
-			const user = await res.json();
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full rounded bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+      >
+        {isSubmitting ? "Signing in..." : "Sign In"}
+      </button>
 
-			// Set user state or context
-			localStorage.setItem("user", JSON.stringify(user));
-
-			// ✅ Navigate
-			router.push(role === "manager" ? "/manager" : "/");
-		} catch (error) {
-			setLoginSuccess(false);
-			alert("❌ Login failed: " + (error as Error).message);
-		}
-	};
-	
-
-	return (
-		<form onSubmit={handleLogin}>
-			{/* Role Toggle */}
-			<div className="flex justify-center mb-4 space-x-4 text-black">
-				<button
-					type="button"
-					className={`px-4 py-2 rounded ${role === "manager" ? "bg-blue-500 text-white" : "bg-gray-200 text-black"
-						}`}
-					onClick={() => setRole("manager")}
-				>
-					Manager
-				</button>
-				<button
-					type="button"
-					className={`px-4 py-2 rounded ${role === "staff" ? "bg-blue-500 text-white" : "bg-gray-200 text-black"
-						}`}
-					onClick={() => setRole("staff")}
-				>
-					Staff
-				</button>
-			</div>
-
-			<div className="mb-4">
-				<label htmlFor="emailOrUsername" className="block mb-1 text-sm font-medium text-black">
-					Email 
-				</label>
-				<input
-					id="emailOrUsername"
-					name="emailOrUsername"
-					type="text"
-					placeholder="Enter your email "
-					required
-					className="text-black w-full border rounded p-2"
-				/>
-			</div>
-
-			<div className="mb-4">
-				<label htmlFor="password" className="block mb-1 text-sm font-medium text-black">
-					Password
-				</label>
-				<input
-					id="password"
-					name="password"
-					type="password"
-                    placeholder="enter your password"
-					required
-					className="text-black w-full border rounded p-2"
-				/>
-			</div>
-
-
-			<button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-				Sign In
-			</button>
-
-			{loginSuccess && (
-				<p className="text-green-600 text-center mt-4">Login Successful!</p>
-			)}
-		</form>
-	);
+      {error && <p className="mt-4 text-center text-sm text-red-600">{error}</p>}
+    </form>
+  );
 }
