@@ -1,9 +1,10 @@
-export type StaffRoleValue = "STAFF" | "MANAGER" | "CASUAL";
+import { StaffRole } from "@/generated/prisma/enums";
 
 type StoreRow = { id: number; name: string };
 type StaffNameRow = { displayName: string };
 type StoreCreateInput = { name: string };
-type StaffCreateInput = { displayName: string; role: StaffRoleValue; storeId: number };
+
+type StaffCreateInput = { displayName: string; role: StaffRole; storeId: number };
 
 export type StaffImportDbClient = {
   store: {

@@ -1,23 +1,33 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getFieldValue, normalizeForKey, parseCsvRecords, type ParsedRow } from "@/utils/importCsv";
+import type { StaffRole } from "@/generated/prisma/enums";
 
 type InvalidRow = { rowNumber: number; errors: string[]; row: ParsedRow };
-type StaffRoleValue = "STAFF" | "MANAGER" | "CASUAL";
+const DUPLICATE_STAFF_ERROR = "Staff name already exists in the database.";
 type ValidStaffRow = {
   rowNumber: number;
   displayName: string;
-  role: StaffRoleValue;
+  role: StaffRole;
   storeName: string;
+  uniformLimit: number | null;
   rawRow: ParsedRow;
 };
 
-const parseRole = (value: string): StaffRoleValue | null => {
+const parseRole = (value: string): StaffRole | null => {
   const normalized = normalizeForKey(value).toUpperCase();
   if (normalized === "STAFF" || normalized === "MANAGER" || normalized === "CASUAL") {
     return normalized;
   }
   return null;
+};
+
+const parseUniformLimit = (value: string): number | null => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
 };
 
 const buildErrorResponse = (message: string, status = 400) =>
@@ -69,13 +79,24 @@ export async function POST(req: Request) {
       const displayName = getFieldValue(rawRow, ["display name", "display_name", "name", "staff name"]);
       const roleRaw = getFieldValue(rawRow, ["role"]);
       const storeName = getFieldValue(rawRow, ["store", "store name"]);
+      const uniformLimitRaw = getFieldValue(rawRow, ["uniform limit", "uniform_limit", "limit"]);
 
-      if (!displayName) rowErrors.push("Missing Display Name");
-      if (!storeName) rowErrors.push("Missing Store");
+      //if (!displayName) rowErrors.push("Missing Display Name");
+      //if (!storeName) rowErrors.push("Missing Store");
+      if (!displayName || !storeName) {
+
+      }
 
       const role = roleRaw ? parseRole(roleRaw) : null;
-      if (!roleRaw) rowErrors.push("Missing Role");
+      const parsedUniformLimit = uniformLimitRaw ? parseUniformLimit(uniformLimitRaw) : null;
+      //if (!roleRaw) rowErrors.push("Missing Role");
+      if (!roleRaw || (!displayName && !storeName)) {
+        rowErrors.push("Please check format of your file")
+      }
       else if (!role) rowErrors.push("Role must be one of: STAFF, MANAGER, CASUAL");
+      if (uniformLimitRaw && parsedUniformLimit === null) {
+        rowErrors.push("Uniform limit must be a positive integer");
+      }
 
       if (rowErrors.length > 0) {
         invalidRows.push({ rowNumber, errors: rowErrors, row: rawRow });
@@ -85,8 +106,9 @@ export async function POST(req: Request) {
       validRows.push({
         rowNumber,
         displayName,
-        role: role as StaffRoleValue,
+        role: role as StaffRole,
         storeName,
+        uniformLimit: parsedUniformLimit,
         rawRow,
       });
     }
@@ -127,7 +149,7 @@ export async function POST(req: Request) {
           skipped++;
           invalidRows.push({
             rowNumber: row.rowNumber,
-            errors: ["Staff already exists in this store."],
+            errors: [DUPLICATE_STAFF_ERROR],
             row: row.rawRow,
           });
           continue;
@@ -138,7 +160,8 @@ export async function POST(req: Request) {
             displayName: row.displayName,
             role: row.role,
             storeId: store.id,
-          },
+            uniformLimit: row.uniformLimit,
+          } as never,
         });
         existingStaffNameKeys.add(staffNameKey);
         success++;

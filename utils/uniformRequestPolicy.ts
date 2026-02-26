@@ -1,0 +1,2 @@
+export const UNIFORM_REQUEST_COOLDOWN_HOURS = 24;
+export const LOW_STOCK_THRESHOLD = 5;

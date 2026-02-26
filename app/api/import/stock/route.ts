@@ -5,7 +5,6 @@ import { getFieldValue, normalizeForKey, parseCsvRecords, type ParsedRow } from 
 type InvalidRow = { rowNumber: number; errors: string[]; row: ParsedRow };
 type ValidStockRow = {
   rowNumber: number;
-  id: number | null;
   ean: string;
   name: string;
   qty: number;
@@ -14,12 +13,6 @@ type ValidStockRow = {
 
 const buildStockKey = (ean: string) => normalizeForKey(ean);
 const isNumericEan = (value: string) => /^\d+$/.test(value.trim());
-
-const findNextAvailableId = (requestedId: number, usedIds: Set<number>) => {
-  let candidate = requestedId;
-  while (usedIds.has(candidate)) candidate += 1;
-  return candidate;
-};
 
 const findNextAvailableEan = (requestedEan: string, usedEanKeys: Set<string>) => {
   const requested = requestedEan.trim();
@@ -86,7 +79,6 @@ export async function POST(req: Request) {
       const ean = getFieldValue(rawRow, ["ean", "EAN"]);
       const name = getFieldValue(rawRow, ["name", "Name"]);
       const qtyRaw = getFieldValue(rawRow, ["qty", "Qty", "quantity"]);
-      const idRaw = getFieldValue(rawRow, ["id", "ID"]);
 
       if (!ean) rowErrors.push("Missing EAN");
       else if (!isNumericEan(ean)) rowErrors.push("EAN must contain digits only");
@@ -100,31 +92,21 @@ export async function POST(req: Request) {
           rowErrors.push("Qty must be a non-negative integer");
       }
 
-      let parsedId: number | null = null;
-      if (idRaw) {
-        const id = Number(idRaw);
-        if (!Number.isFinite(id) || !Number.isInteger(id) || id <= 0)
-          rowErrors.push("ID must be a positive integer");
-        else parsedId = id;
-      }
-
       if (rowErrors.length > 0) {
         invalidRows.push({ rowNumber, errors: rowErrors, row: rawRow });
         continue;
       }
 
-      validRows.push({ rowNumber, id: parsedId, ean, name, qty, rawRow });
+      validRows.push({ rowNumber, ean, name, qty, rawRow });
     }
 
-    // --- Step 2: Fetch existing stock and track used IDs/EANs ---
+    // --- Step 2: Fetch existing stock and track used EANs ---
     const existingRows = await prisma.stockItem.findMany({
-      select: { id: true, ean: true, name: true },
+      select: { ean: true, name: true },
     });
 
     const existingStockKeys = new Set(existingRows.map((item) => buildStockKey(item.ean)));
     const existingNameKeys = new Set(existingRows.map((item) => normalizeForKey(item.name)));
-    const usedStockIds = new Set(existingRows.map((item) => item.id));
-    let nextGeneratedId = usedStockIds.size > 0 ? Math.max(...usedStockIds) + 1 : 1;
 
     // --- Step 3: Insert valid rows ---
     let success = 0;
@@ -143,18 +125,12 @@ export async function POST(req: Request) {
         if (resolvedEan !== row.ean)
           notices.push(`Row ${row.rowNumber}: EAN ${row.ean} was duplicated. Saved as ${resolvedEan}.`);
 
-        const resolvedId = row.id ? findNextAvailableId(row.id, usedStockIds) : findNextAvailableId(nextGeneratedId, usedStockIds);
-        if (!row.id) nextGeneratedId = resolvedId + 1;
-        if (row.id && resolvedId !== row.id)
-          notices.push(`Row ${row.rowNumber}: ID ${row.id} was duplicated. Saved as ${resolvedId}.`);
-
         await prisma.stockItem.create({
-          data: { id: resolvedId, ean: resolvedEan, name: row.name, qty: row.qty },
+          data: { ean: resolvedEan, name: row.name, qty: row.qty },
         });
 
         existingStockKeys.add(buildStockKey(resolvedEan));
         existingNameKeys.add(nameKey);
-        usedStockIds.add(resolvedId);
         success++;
       } catch {
         invalidRows.push({ rowNumber: row.rowNumber, errors: ["Database save failed for this row"], row: row.rawRow });

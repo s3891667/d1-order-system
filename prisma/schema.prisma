@@ -21,17 +21,6 @@ enum StaffRole {
   CASUAL
 }
 
-enum ImportBatchStatus {
-  PROCESSING
-  COMPLETED
-  FAILED
-}
-
-enum ImportType {
-  STAFF
-  STOCK
-}
-
 enum RequestStatus {
   DRAFT
   SUBMITTED
@@ -53,7 +42,6 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  importedBatches ImportBatch[]
 }
 
 model Store {
@@ -70,6 +58,7 @@ model Staff {
   displayName     String
   role            StaffRole
   storeId         Int
+  uniformLimit    Int?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -81,44 +70,22 @@ model Staff {
 }
 
 model StockItem {
-  id        Int      @id @default(autoincrement())
-  ean       String
+  ean       String   @id
   name      String
   qty       Int
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@unique([ean, name])
-  @@index([ean])
-}
-
-model ImportBatch {
-  id           Int               @id @default(autoincrement())
-  importType   ImportType
-  fileName     String
-  importedById Int?
-  totalRows    Int               @default(0)
-  validRows    Int               @default(0)
-  successRows  Int               @default(0)
-  failedRows   Int               @default(0)
-  status       ImportBatchStatus @default(PROCESSING)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-
-  importedBy User? @relation(fields: [importedById], references: [id])
-
-  @@index([importedById])
+  @@index([name])
 }
 
 model UniformRequest {
   id          Int           @id @default(autoincrement())
   requestNo   String        @unique
+  trackingId  String        @unique
   requestedBy Int
   status      RequestStatus @default(DRAFT)
   notes       String?
-  neededBy    DateTime?
   createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
 
   staff Staff                @relation(fields: [requestedBy], references: [id])
   items UniformRequestItem[]

@@ -20,6 +20,8 @@ type InvalidRow = {
 };
 
 type ImportType = "staff" | "stock";
+const DUPLICATE_STAFF_ERROR = "Staff name already exists in the database.";
+const LEGACY_DUPLICATE_STAFF_ERROR = "Staff already exists in this store.";
 
 export default function ImportPanel() {
   const [importType, setImportType] = useState<ImportType>("staff");
@@ -28,6 +30,21 @@ export default function ImportPanel() {
   const [errors, setErrors] = useState<string[]>([]);
   const [invalidRows, setInvalidRows] = useState<InvalidRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const duplicateStaffRows = invalidRows.filter(
+    (invalidRow) =>
+      invalidRow.errors.length === 1 &&
+      (invalidRow.errors[0] === DUPLICATE_STAFF_ERROR ||
+        invalidRow.errors[0] === LEGACY_DUPLICATE_STAFF_ERROR)
+  );
+  const detailedInvalidRows = invalidRows.filter(
+    (invalidRow) =>
+      !(
+        invalidRow.errors.length === 1 &&
+        (invalidRow.errors[0] === DUPLICATE_STAFF_ERROR ||
+          invalidRow.errors[0] === LEGACY_DUPLICATE_STAFF_ERROR)
+      )
+  );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -184,7 +201,15 @@ export default function ImportPanel() {
             <div className="rounded border border-amber-200 bg-amber-50 p-4">
               <h4 className="mb-2 font-semibold text-amber-700">Invalid Rows</h4>
               <div className="max-h-[420px] space-y-2 overflow-auto text-sm text-slate-800">
-                {invalidRows.map((invalidRow) => (
+                {duplicateStaffRows.length > 0 && (
+                  <div className="rounded border border-amber-200 bg-white p-3">
+                    <p className="text-red-600">
+                      {DUPLICATE_STAFF_ERROR}
+                      {duplicateStaffRows.length > 1 ? ` (${duplicateStaffRows.length} rows)` : ""}
+                    </p>
+                  </div>
+                )}
+                {detailedInvalidRows.map((invalidRow) => (
                   <div key={invalidRow.rowNumber} className="rounded border border-amber-200 bg-white p-3">
                     <p className="font-medium">Row {invalidRow.rowNumber}</p>
                     <p className="text-red-600">{invalidRow.errors.join(", ")}</p>
