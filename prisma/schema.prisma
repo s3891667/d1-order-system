@@ -54,7 +54,6 @@ model User {
   updatedAt DateTime @updatedAt
 
   importedBatches ImportBatch[]
-  uniformRequests UniformRequest[]
 }
 
 model Store {
@@ -67,14 +66,15 @@ model Store {
 }
 
 model Staff {
-  id          Int       @id @default(autoincrement())
-  staffName String
-  role        StaffRole
-  storeId     Int
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              Int              @id @default(autoincrement())
+  displayName     String
+  role            StaffRole
+  storeId         Int
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  store Store @relation(fields: [storeId], references: [id])
+  store           Store            @relation(fields: [storeId], references: [id])
+  uniformRequests UniformRequest[]
 
   @@index([storeId])
   @@index([role])
@@ -120,7 +120,7 @@ model UniformRequest {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  user  User                 @relation(fields: [requestedBy], references: [id])
+  staff Staff                @relation(fields: [requestedBy], references: [id])
   items UniformRequestItem[]
 
   @@index([requestedBy, status])

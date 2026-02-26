@@ -116,9 +116,9 @@ export async function POST(req: Request) {
         if (!existingStaffNameKeys) {
           const existingStaff = await prisma.staff.findMany({
             where: { storeId: store.id },
-            select: { staffName: true },
+            select: { displayName: true },
           });
-          existingStaffNameKeys = new Set(existingStaff.map((staff) => normalizeForKey(staff.staffName)));
+          existingStaffNameKeys = new Set(existingStaff.map((staff) => normalizeForKey(staff.displayName)));
           existingStaffNamesByStoreId.set(store.id, existingStaffNameKeys);
         }
 
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
 
         await prisma.staff.create({
           data: {
-            staffName: row.displayName,
+            displayName: row.displayName,
             role: row.role,
             storeId: store.id,
           },

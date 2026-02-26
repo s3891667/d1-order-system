@@ -29,7 +29,7 @@ const fetchStaff = async (data?: any) => {
 const staffArray = await fetchStaff(); // MUST be inside async function or useEffect in client
 const staffOptions = staffArray.map((staff) => ({
   value: staff.id,
-  label: staff.staffName, // match your Prisma schema
+  label: staff.displayName,
 }));
 
 
