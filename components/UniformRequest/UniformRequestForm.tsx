@@ -1,5 +1,6 @@
-"use client"
-import { FormEvent, useEffect, useMemo, useState } from "react";
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEventHandler } from "react";
 import type { StaffRole, StockItem } from "@/generated/prisma/browser";
 import { LOW_STOCK_THRESHOLD } from "@/utils/uniformRequestPolicy";
 
@@ -94,6 +95,7 @@ const INITIAL_FORM_VALUES: UniformRequestFormValues = {
 
 export default function UniformRequestForm() {
   const [formValues, setFormValues] = useState<UniformRequestFormValues>(INITIAL_FORM_VALUES);
+  const [quantityInput, setQuantityInput] = useState(String(INITIAL_FORM_VALUES.quantity));
 
   const {
     data: staffList,
@@ -114,6 +116,7 @@ export default function UniformRequestForm() {
   const [isRoleStepVisible, setIsRoleStepVisible] = useState(true);
   const [isRoleStepFading, setIsRoleStepFading] = useState(false);
   const [isFormVisible, setIsFormVisible] = useState(false);
+  const [isEditingUniformLimit, setIsEditingUniformLimit] = useState(false);
 
   const filteredStaffOptions = useMemo(
     () => staffList.filter((staff) => staff.role === formValues.staffRole),
@@ -126,11 +129,16 @@ export default function UniformRequestForm() {
   const isSelectedItemLowStock = Boolean(selectedStockItem && selectedStockItem.qty <= LOW_STOCK_THRESHOLD);
   const exceedsStock = Boolean(selectedStockItem && formValues.quantity > selectedStockItem.qty);
   const exceedsUniformLimit = formValues.quantity > formValues.uniformLimit;
+  const isQuantityZero = quantityInput.trim() !== "" && Number(quantityInput) === 0;
   const hasCooldownBlock = cooldownStatus ? !cooldownStatus.canRequest : false;
+  const showsCooldownWaitMessage = Boolean(
+    cooldownStatus && !cooldownStatus.canRequest && cooldownStatus.nextAllowedAt
+  );
 
   useEffect(() => {
     if (!formValues.staffMember) {
       setCooldownStatus(null);
+      setIsEditingUniformLimit(false);
       return;
     }
 
@@ -165,7 +173,7 @@ export default function UniformRequestForm() {
     return () => controller.abort();
   }, [formValues.staffMember]);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     setSubmitMessage("");
     setSubmitError("");
@@ -210,7 +218,10 @@ export default function UniformRequestForm() {
     const res = await fetch(`/api/staff-management/staffs/${formValues.staffMember}/uniform-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formValues),
+      body: JSON.stringify({
+        ...formValues,
+        status: "Request",
+      }),
     });
     if (!res.ok) {
       const errorBody = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -224,6 +235,7 @@ export default function UniformRequestForm() {
       quantity: 1,
       notes: "",
     }));
+    setQuantityInput("1");
   };
 
   const handleRoleChange = (selectedRole: string) => {
@@ -233,6 +245,7 @@ export default function UniformRequestForm() {
       staffMember: "",
       uniformLimit: 1,
     }));
+    setIsEditingUniformLimit(false);
   };
 
   const handleRoleStepNext = () => {
@@ -257,18 +270,29 @@ export default function UniformRequestForm() {
       quantity: 1,
       notes: "",
     }));
+    setQuantityInput(String(INITIAL_FORM_VALUES.quantity));
     setSubmitMessage("");
     setSubmitError("");
     setCooldownStatus(null);
+    setIsEditingUniformLimit(false);
     setIsFormVisible(false);
     setIsRoleStepVisible(true);
+  };
+
+  const handleQuantityInputBlur = () => {
+    const parsedQuantity = Number(quantityInput);
+    const nextQuantity =
+      Number.isFinite(parsedQuantity) && parsedQuantity >= 1 ? Math.floor(parsedQuantity) : 1;
+
+    setFormValues((prev) => ({ ...prev, quantity: nextQuantity }));
+    setQuantityInput(String(nextQuantity));
   };
 
   return (
     <section className="w-full max-w-3xl rounded-lg border bg-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold">Create Uniform Request</h2>
       <p className="mt-2 text-sm text-slate-600">
-        Select a staff member, choose a uniform item, set quantity, and submit.
+        Select role, then staff member and limit, choose a uniform item, set quantity, and submit.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -291,26 +315,6 @@ export default function UniformRequestForm() {
               <option value="STAFF">Staff</option>
               <option value="CASUAL">Casual</option>
             </select>
-
-            <div className="py-4">
-              <label htmlFor="uniformLimit" className="mb-1 block text-sm font-medium text-slate-700">
-                Uniform Limit
-              </label>
-              <input
-                id="uniformLimit"
-                type="number"
-                min={1}
-                value={formValues.uniformLimit}
-                onChange={(e) =>
-                  setFormValues((prev) => ({
-                    ...prev,
-                    uniformLimit: Math.max(1, Number(e.target.value) || 1),
-                  }))
-                }
-                required
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              />
-            </div>
             <button
               type="button"
               onClick={handleRoleStepNext}
@@ -348,6 +352,7 @@ export default function UniformRequestForm() {
                   setFormValues((prev) => {
                     const nextStaffId = e.target.value;
                     const nextStaff = staffList.find((staff) => String(staff.id) === nextStaffId);
+                    setIsEditingUniformLimit(false);
                     return {
                       ...prev,
                       staffMember: nextStaffId,
@@ -387,9 +392,40 @@ export default function UniformRequestForm() {
                   {new Date(cooldownStatus.nextAllowedAt).toLocaleString()}.
                 </p>
               )}
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <label htmlFor="uniformLimit" className="block text-sm font-medium text-slate-700">
+                  Uniform Limit
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingUniformLimit((prev) => !prev)}
+                  disabled={!formValues.staffMember}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-400"
+                >
+                  {isEditingUniformLimit ? "Lock" : "Edit"}
+                </button>
+              </div>
+              <input
+                id="uniformLimit"
+                type="number"
+                min={1}
+                value={formValues.uniformLimit}
+                onChange={(e) =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    uniformLimit: Math.max(1, Number(e.target.value) || 1),
+                  }))
+                }
+                required
+                disabled={!formValues.staffMember || !isEditingUniformLimit}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              />
               {formValues.staffMember && (
                 <p className="mt-1 text-sm text-slate-500">
-                  Staff uniform limit: {formValues.uniformLimit}
+                  Pre-filled from saved staff limit. Click Edit to change it.
                 </p>
               )}
             </div>
@@ -442,13 +478,21 @@ export default function UniformRequestForm() {
                 type="number"
                 min={1}
                 max={selectedStockItem ? Math.max(Math.min(selectedStockItem.qty, formValues.uniformLimit), 1) : formValues.uniformLimit}
-                value={formValues.quantity}
-                onChange={(e) =>
-                  setFormValues((prev) => ({
-                    ...prev,
-                    quantity: Math.max(1, Number(e.target.value) || 1),
-                  }))
-                }
+                step={1}
+                value={quantityInput}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setQuantityInput(nextValue);
+
+                  const parsedQuantity = Number(nextValue);
+                  if (Number.isFinite(parsedQuantity) && parsedQuantity >= 1) {
+                    setFormValues((prev) => ({
+                      ...prev,
+                      quantity: Math.floor(parsedQuantity),
+                    }));
+                  }
+                }}
+                onBlur={handleQuantityInputBlur}
                 required
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
@@ -456,6 +500,9 @@ export default function UniformRequestForm() {
                 <p className="mt-1 text-sm text-red-600">
                   Quantity cannot exceed available stock ({selectedStockItem.qty}).
                 </p>
+              )}
+              {isQuantityZero && (
+                <p className="mt-1 text-sm text-red-600">Quantity cannot be 0. Please enter at least 1.</p>
               )}
               {exceedsUniformLimit && (
                 <p className="mt-1 text-sm text-red-600">
@@ -484,13 +531,15 @@ export default function UniformRequestForm() {
               type="submit"
               disabled={
                 hasCooldownBlock ||
+                showsCooldownWaitMessage ||
                 isCheckingCooldown ||
                 !selectedStockItem ||
                 selectedStockItem.qty <= 0 ||
+                isQuantityZero ||
                 exceedsStock ||
                 exceedsUniformLimit
               }
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               Submit Request
             </button>

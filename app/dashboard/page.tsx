@@ -2,6 +2,7 @@
 
 import ImportPanel from "@/components/Import/ImportPanel";
 import UniformRequestForm from "@/components/UniformRequest/UniformRequestForm";
+import UniformRequestStatusView from "@/components/UniformRequest/UniformRequestStatusView";
 import { useState } from "react";
 
 type DashboardSection = "importData" | "createUniformRequest" | "trackRequestStatus";
@@ -76,12 +77,7 @@ export default function DashboardPage() {
           ) : activeSection === "createUniformRequest" ? (
             <UniformRequestForm />
           ) : activeSection === "trackRequestStatus" ? (
-            <section className="rounded-lg border bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Track Request Status</h2>
-              <p className="mt-2 text-sm text-slate-600">
-                This section is ready for request status tracking.
-              </p>
-            </section>
+            <UniformRequestStatusView />
           ) : null}
         </main>
       </div>
