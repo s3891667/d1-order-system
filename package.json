@@ -12,6 +12,7 @@
     "@prisma/adapter-better-sqlite3": "^7.4.1",
     "@prisma/client": "^7.4.1",
     "@sqlitecloud/drivers": "^1.0.779",
+    "chart.js": "^4.5.1",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.3.1",
     "next": "16.1.6",

@@ -3,7 +3,9 @@
 import ImportPanel from "@/components/Import/ImportPanel";
 import UniformRequestForm from "@/components/UniformRequest/UniformRequestForm";
 import UniformRequestStatusView from "@/components/UniformRequest/UniformRequestStatusView";
+import DispatchManagement from "@/components/Dispatch/DispatchManagement";
 import { useEffect, useState } from "react";
+
 
 type AppRole = "admin" | "dispatchAdmin";
 type DashboardSection =
@@ -11,17 +13,6 @@ type DashboardSection =
   | "createUniformRequest"
   | "trackRequestStatus"
   | "ordersManagement";
-
-function OrdersManagementPlaceholder() {
-  return (
-    <section className="rounded-lg border bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">Orders Management</h2>
-      <p className="mt-2 text-sm text-slate-600">
-        Dispatch team section placeholder. We can add form fields and workflow details here next.
-      </p>
-    </section>
-  );
-}
 
 export default function DashboardPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -135,9 +126,9 @@ export default function DashboardPage() {
           ) : !isDispatchAdmin && visibleSection === "createUniformRequest" ? (
             <UniformRequestForm />
           ) : visibleSection === "trackRequestStatus" ? (
-            <UniformRequestStatusView />
+            <UniformRequestStatusView isDispatchAdmin={isDispatchAdmin} />
           ) : visibleSection === "ordersManagement" && isDispatchAdmin ? (
-            <OrdersManagementPlaceholder />
+            <DispatchManagement />
           ) : null}
         </main>
       </div>
