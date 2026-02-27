@@ -220,7 +220,7 @@ export default function UniformRequestForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...formValues,
-        status: "Request",
+        status: "REQUEST",
       }),
     });
     if (!res.ok) {

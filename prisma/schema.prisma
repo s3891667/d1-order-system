@@ -22,12 +22,8 @@ enum StaffRole {
 }
 
 enum RequestStatus {
-  DRAFT
-  SUBMITTED
-  APPROVED
+  PENDING
   REJECTED
-  IN_PROGRESS
-  READY_FOR_COLLECTION
   COMPLETED
   CANCELLED
   DISPATCHED
@@ -88,7 +84,7 @@ model UniformRequest {
   requestNo   String        @unique
   trackingId  String        @unique
   requestedBy Int
-  status      RequestStatus @default(DRAFT)
+  status      RequestStatus @default(PENDING)
   notes       String?
   createdAt   DateTime      @default(now())
 

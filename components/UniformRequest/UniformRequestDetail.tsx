@@ -8,6 +8,8 @@ type Props = {
   requestId: number;
   onClose: () => void;
   onStatusChanged: (id: number, newStatus: string) => void;
+  isAdmin?: boolean;
+  onReorder?: (detail: RequestDetail) => void;
 };
 
 type StatusAction = {
@@ -16,7 +18,14 @@ type StatusAction = {
   variant: "primary" | "success" | "warning" | "danger" | "neutral";
 };
 
-function getStatusActions(status: string): StatusAction[] {
+function getStatusActions(status: string, isAdmin?: boolean): StatusAction[] {
+  if (isAdmin) {
+    if (status === "ARRIVED") {
+      return [{ label: "Mark Collected", nextStatus: "COLLECTED", variant: "success" }];
+    }
+    return [];
+  }
+
   const actions: StatusAction[] = [];
 
   switch (status) {
@@ -57,7 +66,7 @@ const VARIANT_CLASSES: Record<StatusAction["variant"], string> = {
     "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-300",
 };
 
-export default function UniformRequestDetail({ requestId, onClose, onStatusChanged }: Props) {
+export default function UniformRequestDetail({ requestId, onClose, onStatusChanged, isAdmin = false, onReorder }: Props) {
   const [detail, setDetail] = useState<RequestDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -160,7 +169,8 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
     }
   };
 
-  const actions = detail ? getStatusActions(detail.status) : [];
+  const actions = detail ? getStatusActions(detail.status, isAdmin) : [];
+  const showReorder = isAdmin && detail !== null && (detail.status === "COLLECTED" || detail.status === "COMPLETED");
 
   return (
     <>
@@ -393,28 +403,49 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
               <p className="mb-3 text-xs text-red-600">{actionError}</p>
             )}
 
-            {actions.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                {detail.status === "CANCELLED"
-                  ? "This request is archived and can no longer be updated."
-                  : "No further actions available."}
-              </p>
-            ) : (
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs font-medium text-slate-500">Actions:</span>
-                {actions.map((action) => (
-                  <button
-                    key={action.nextStatus}
-                    type="button"
-                    onClick={() => handleStatusAction(action.nextStatus)}
-                    disabled={pendingStatus !== null}
-                    className={`rounded-md px-4 py-2 text-sm font-medium shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 ${VARIANT_CLASSES[action.variant]}`}
-                  >
-                    {pendingStatus === action.nextStatus ? "Updating…" : action.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {actions.length === 0 && !showReorder ? (
+                <p className="text-sm text-slate-500">
+                  {detail.status === "CANCELLED"
+                    ? "This request is archived and can no longer be updated."
+                    : isAdmin
+                    ? "No actions available at this stage."
+                    : "No further actions available."}
+                </p>
+              ) : (
+                <>
+                  {actions.length > 0 && (
+                    <>
+                      <span className="text-xs font-medium text-slate-500">Actions:</span>
+                      {actions.map((action) => (
+                        <button
+                          key={action.nextStatus}
+                          type="button"
+                          onClick={() => handleStatusAction(action.nextStatus)}
+                          disabled={pendingStatus !== null}
+                          className={`rounded-md px-4 py-2 text-sm font-medium shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 ${VARIANT_CLASSES[action.variant]}`}
+                        >
+                          {pendingStatus === action.nextStatus ? "Updating…" : action.label}
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  {showReorder && (
+                    <button
+                      type="button"
+                      onClick={() => onReorder?.(detail)}
+                      className="ml-auto flex items-center gap-2 rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                      </svg>
+                      Re-order
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
