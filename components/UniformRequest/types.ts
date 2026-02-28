@@ -1,6 +1,16 @@
+import type { StaffRole, StockItem } from "@/generated/prisma/browser";
+
 export type StaffSummary = {
   displayName: string;
   role: string;
+};
+
+export type StatusActionVariant = "primary" | "success" | "warning" | "danger" | "neutral";
+
+export type StatusAction = {
+  label: string;
+  nextStatus: string;
+  variant: StatusActionVariant;
 };
 
 export type UniformRequestItem = {
@@ -13,7 +23,7 @@ export type UniformRequestItem = {
 
 export type UniformRequestRecord = {
   id: number;
-  requestNo: string;
+  ean: string;
   trackingId: string;
   status: string;
   notes: string | null;
@@ -23,11 +33,13 @@ export type UniformRequestRecord = {
 };
 
 export type UniformRequestDetail = UniformRequestRecord & {
+  quantity: number;
+  storeName: string | null;
   items: UniformRequestItem[];
 };
 
 export type AdvancedFilters = {
-  requestNo: string;
+  ean: string;
   staffName: string;
   staffRole: string;
   trackingId: string;
@@ -35,4 +47,32 @@ export type AdvancedFilters = {
   dateFrom: string;
   dateTo: string;
   notes: string;
+};
+
+export type UniformRequestFormValues = {
+  staffRole: StaffRole | "";
+  staffMember: string;
+  uniformLimit: number;
+  ean: string;
+  name: string;
+  quantity: number;
+  notes: string;
+};
+
+export type StaffOption = {
+  id: number;
+  displayName: string;
+  role: StaffRole;
+  uniformLimit: number | null;
+};
+
+export type StockOption = Pick<StockItem, "ean" | "name" | "qty">;
+
+export type CooldownStatus = {
+  canRequest: boolean;
+  nextAllowedAt: string | null;
+  uniformLimit: number | null;
+  totalOrdered: number;
+  totalRequests: number;
+  remaining: number | null;
 };

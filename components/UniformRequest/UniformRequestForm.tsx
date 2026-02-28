@@ -1,101 +1,41 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEventHandler } from "react";
-import type { StaffRole, StockItem } from "@/generated/prisma/browser";
+import type { StaffRole } from "@/generated/prisma/browser";
 import { LOW_STOCK_THRESHOLD } from "@/utils/uniformRequestPolicy";
+import type { CooldownStatus, UniformRequestFormValues } from "./types";
+import { fetchStaff, fetchUniformStock, INITIAL_FORM_VALUES, useOptionsLoader } from "./utils";
 
-type UniformRequestFormValues = {
-  staffRole: StaffRole | "";
-  staffMember: string;
-  uniformLimit: number;
-  uniformItem: string;
-  quantity: number;
-  notes: string;
+type Props = {
+  initialValues?: Partial<UniformRequestFormValues>;
 };
 
-type StaffOption = {
-  id: number;
-  displayName: string;
-  role: StaffRole;
-  uniformLimit: number | null;
-};
+export default function UniformRequestForm({ initialValues: initialValuesProp }: Props) {
+  const hasInitialValues = Boolean(
+    initialValuesProp && Object.keys(initialValuesProp).length > 0
+  );
+  const mergedInitial = useMemo(
+    () =>
+      hasInitialValues && initialValuesProp
+        ? { ...INITIAL_FORM_VALUES, ...initialValuesProp }
+        : INITIAL_FORM_VALUES,
+    [hasInitialValues, initialValuesProp]
+  );
 
-type StockOption = Pick<StockItem, "ean" | "name" | "qty">;
-type CooldownStatus = {
-  canRequest: boolean;
-  nextAllowedAt: string | null;
-  uniformLimit: number | null;
-};
-
-function useOptionsLoader<T>(loader: () => Promise<T[]>, emptyMessage: string) {
-  const [data, setData] = useState<T[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [formValues, setFormValues] = useState<UniformRequestFormValues>(mergedInitial);
+  const [quantityInput, setQuantityInput] = useState(String(mergedInitial.quantity));
+  const [hasAppliedInitial, setHasAppliedInitial] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      setLoading(true);
-      const result = await loader();
-
-      if (!isMounted) return;
-
-      setData(result);
-      setError(result.length === 0 ? emptyMessage : "");
-      setLoading(false);
-    };
-
-    loadData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [loader, emptyMessage]);
-
-  return { data, loading, error };
-}
-
-const fetchStaff = async (): Promise<StaffOption[]> => {
-  try {
-    const res = await fetch("/api/staff-management/staffs");
-
-    if (!res.ok) throw new Error("Failed to fetch staff");
-
-    const result = (await res.json()) as StaffOption[];
-    return result;
-  } catch (error) {
-    console.error("Error fetching staff:", error);
-    return [];
-  }
-};
-
-const fetchUniformStock = async (): Promise<StockOption[]> => {
-  try {
-    const res = await fetch("/api/uniform/stock");
-
-    if (!res.ok) throw new Error("Failed to fetch uniform stock");
-
-    const result = (await res.json()) as StockOption[];
-    return result;
-  } catch (error) {
-    console.error("Error fetching uniform stock:", error);
-    return [];
-  }
-};
-
-const INITIAL_FORM_VALUES: UniformRequestFormValues = {
-  staffRole: "",
-  staffMember: "",
-  uniformLimit: 1,
-  uniformItem: "",
-  quantity: 1,
-  notes: "",
-};
-
-export default function UniformRequestForm() {
-  const [formValues, setFormValues] = useState<UniformRequestFormValues>(INITIAL_FORM_VALUES);
-  const [quantityInput, setQuantityInput] = useState(String(INITIAL_FORM_VALUES.quantity));
+    if (hasInitialValues && initialValuesProp && !hasAppliedInitial) {
+      const merged = { ...INITIAL_FORM_VALUES, ...initialValuesProp };
+      setFormValues(merged);
+      setQuantityInput(String(merged.quantity));
+      setIsRoleStepVisible(false);
+      setIsFormVisible(true);
+      setHasAppliedInitial(true);
+    }
+  }, [hasInitialValues, initialValuesProp, hasAppliedInitial]);
 
   const {
     data: staffList,
@@ -112,10 +52,15 @@ export default function UniformRequestForm() {
   const [submitMessage, setSubmitMessage] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [cooldownStatus, setCooldownStatus] = useState<CooldownStatus | null>(null);
+  const [totalOrdered, setTotalOrdered] = useState(0);
   const [isCheckingCooldown, setIsCheckingCooldown] = useState(false);
-  const [isRoleStepVisible, setIsRoleStepVisible] = useState(true);
+  const [isRoleStepVisible, setIsRoleStepVisible] = useState(
+    !hasInitialValues || !(initialValuesProp?.staffRole && initialValuesProp?.staffMember)
+  );
   const [isRoleStepFading, setIsRoleStepFading] = useState(false);
-  const [isFormVisible, setIsFormVisible] = useState(false);
+  const [isFormVisible, setIsFormVisible] = useState(
+    Boolean(hasInitialValues && initialValuesProp?.staffRole && initialValuesProp?.staffMember)
+  );
   const [isEditingUniformLimit, setIsEditingUniformLimit] = useState(false);
 
   const filteredStaffOptions = useMemo(
@@ -123,12 +68,13 @@ export default function UniformRequestForm() {
     [staffList, formValues.staffRole]
   );
   const selectedStockItem = useMemo(
-    () => uniformStock.find((item) => item.ean === formValues.uniformItem),
-    [uniformStock, formValues.uniformItem]
+    () => uniformStock.find((item) => item.ean === formValues.ean && item.name === formValues.name),
+    [uniformStock, formValues.ean, formValues.name]
   );
+  const effectiveRemaining = formValues.uniformLimit - totalOrdered;
   const isSelectedItemLowStock = Boolean(selectedStockItem && selectedStockItem.qty <= LOW_STOCK_THRESHOLD);
   const exceedsStock = Boolean(selectedStockItem && formValues.quantity > selectedStockItem.qty);
-  const exceedsUniformLimit = formValues.quantity > formValues.uniformLimit;
+  const exceedsUniformLimit = formValues.quantity > effectiveRemaining;
   const isQuantityZero = quantityInput.trim() !== "" && Number(quantityInput) === 0;
   const hasCooldownBlock = cooldownStatus ? !cooldownStatus.canRequest : false;
   const showsCooldownWaitMessage = Boolean(
@@ -138,6 +84,7 @@ export default function UniformRequestForm() {
   useEffect(() => {
     if (!formValues.staffMember) {
       setCooldownStatus(null);
+      setTotalOrdered(0);
       setIsEditingUniformLimit(false);
       return;
     }
@@ -153,6 +100,7 @@ export default function UniformRequestForm() {
         if (!res.ok) throw new Error("Failed to fetch cooldown status");
         const result = (await res.json()) as CooldownStatus;
         setCooldownStatus(result);
+        setTotalOrdered(result.totalOrdered ?? 0);
         setFormValues((prev) => ({
           ...prev,
           uniformLimit:
@@ -163,6 +111,7 @@ export default function UniformRequestForm() {
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
         setCooldownStatus(null);
+        setTotalOrdered(0);
       } finally {
         if (!controller.signal.aborted) setIsCheckingCooldown(false);
       }
@@ -199,7 +148,7 @@ export default function UniformRequestForm() {
     }
 
     if (exceedsUniformLimit) {
-      setSubmitError(`Requested quantity exceeds staff uniform limit (${formValues.uniformLimit}).`);
+      setSubmitError(`Requested quantity exceeds remaining allowance (${effectiveRemaining} left of ${formValues.uniformLimit}).`);
       return;
     }
 
@@ -215,6 +164,7 @@ export default function UniformRequestForm() {
       return;
     }
 
+    //TODO:
     const res = await fetch(`/api/staff-management/staffs/${formValues.staffMember}/uniform-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -223,6 +173,7 @@ export default function UniformRequestForm() {
         status: "REQUEST",
       }),
     });
+
     if (!res.ok) {
       const errorBody = (await res.json().catch(() => null)) as { error?: string } | null;
       setSubmitError(errorBody?.error ?? "Failed to submit uniform request.");
@@ -231,7 +182,9 @@ export default function UniformRequestForm() {
     setSubmitMessage("Uniform request submitted.");
     setFormValues((prev) => ({
       ...prev,
-      uniformItem: "",
+      staffMember: "",
+      ean: "",
+      name: "",
       quantity: 1,
       notes: "",
     }));
@@ -266,7 +219,8 @@ export default function UniformRequestForm() {
       staffRole: "",
       staffMember: "",
       uniformLimit: 1,
-      uniformItem: "",
+      ean: "",
+      name: "",
       quantity: 1,
       notes: "",
     }));
@@ -274,6 +228,7 @@ export default function UniformRequestForm() {
     setSubmitMessage("");
     setSubmitError("");
     setCooldownStatus(null);
+    setTotalOrdered(0);
     setIsEditingUniformLimit(false);
     setIsFormVisible(false);
     setIsRoleStepVisible(true);
@@ -353,6 +308,7 @@ export default function UniformRequestForm() {
                     const nextStaffId = e.target.value;
                     const nextStaff = staffList.find((staff) => String(staff.id) === nextStaffId);
                     setIsEditingUniformLimit(false);
+                    setSubmitMessage("");
                     return {
                       ...prev,
                       staffMember: nextStaffId,
@@ -424,9 +380,22 @@ export default function UniformRequestForm() {
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
               {formValues.staffMember && (
-                <p className="mt-1 text-sm text-slate-500">
-                  Pre-filled from saved staff limit. Click Edit to change it.
-                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <p className="text-sm text-slate-500">
+                    Pre-filled from saved staff limit. Click Edit to change it.
+                  </p>
+                  <span
+                    className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      effectiveRemaining <= 0
+                        ? "bg-red-100 text-red-700"
+                          : "bg-green-100 text-green-700"
+                    }`}
+                  >
+                    {effectiveRemaining <= 0
+                      ? "Cannot order more at this stage"
+                      : `${effectiveRemaining} remaining of ${formValues.uniformLimit}`}
+                  </span>
+                </div>
               )}
             </div>
 
@@ -436,10 +405,18 @@ export default function UniformRequestForm() {
               </label>
               <select
                 id="uniformItem"
-                value={formValues.uniformItem}
-                onChange={(e) =>
-                  setFormValues((prev) => ({ ...prev, uniformItem: e.target.value }))
-                }
+                value={formValues.ean && formValues.name ? `${formValues.ean}::${formValues.name}` : ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) {
+                    setFormValues((prev) => ({ ...prev, ean: "", name: "" }));
+                    return;
+                  }
+                  const sep = val.indexOf("::");
+                  const selectedEan = sep >= 0 ? val.slice(0, sep) : val;
+                  const selectedName = sep >= 0 ? val.slice(sep + 2) : "";
+                  setFormValues((prev) => ({ ...prev, ean: selectedEan, name: selectedName }));
+                }}
                 required
                 disabled={isLoadingStock}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
@@ -452,7 +429,7 @@ export default function UniformRequestForm() {
                       : "Select uniform item"}
                 </option>
                 {uniformStock.map((item) => (
-                  <option key={item.ean} value={item.ean}>
+                  <option key={`${item.ean}::${item.name}`} value={`${item.ean}::${item.name}`}>
                     {item.name} - {item.qty} in stock
                     {item.qty <= LOW_STOCK_THRESHOLD ? " (LOW STOCK)" : ""}
                   </option>
@@ -477,7 +454,7 @@ export default function UniformRequestForm() {
                 id="quantity"
                 type="number"
                 min={1}
-                max={selectedStockItem ? Math.max(Math.min(selectedStockItem.qty, formValues.uniformLimit), 1) : formValues.uniformLimit}
+                max={selectedStockItem ? Math.max(Math.min(selectedStockItem.qty, effectiveRemaining), 1) : effectiveRemaining}
                 step={1}
                 value={quantityInput}
                 onChange={(e) => {
@@ -506,7 +483,7 @@ export default function UniformRequestForm() {
               )}
               {exceedsUniformLimit && (
                 <p className="mt-1 text-sm text-red-600">
-                  Quantity cannot exceed staff uniform limit ({formValues.uniformLimit}).
+                  Quantity cannot exceed remaining allowance ({effectiveRemaining} left of {formValues.uniformLimit}).
                 </p>
               )}
             </div>

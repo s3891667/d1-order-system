@@ -1,11 +1,11 @@
 "use client";
 
+import ImportForm from "@/components/Import/ImportForm";
+import ImportSummaryDisplay from "@/components/Import/ImportSummaryDisplay";
+import InvalidRowsDisplay from "@/components/Import/InvalidRowsDisplay";
 import { useImport } from "@/hooks/useImport";
-import ImportForm from "./ImportForm";
-import ImportSummaryDisplay from "./ImportSummaryDisplay";
-import InvalidRowsDisplay from "./InvalidRowsDisplay";
 
-export default function ImportPanel() {
+export default function ImportPage() {
   const {
     importType,
     file,
@@ -19,8 +19,13 @@ export default function ImportPanel() {
   } = useImport();
 
   return (
-    <div className="w-full max-w-6xl rounded-lg border bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-xl font-bold text-slate-900">Import Data</h2>
+    <section className="w-full max-w-6xl rounded-lg border bg-white p-6 shadow-sm">
+      <header className="mb-6">
+        <h2 className="text-xl font-bold text-slate-900">Import Data</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Upload staff or stock CSV files to import data into the system.
+        </p>
+      </header>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ImportForm
@@ -49,6 +54,6 @@ export default function ImportPanel() {
           <InvalidRowsDisplay invalidRows={invalidRows} />
         </div>
       </div>
-    </div>
+    </section>
   );
 }

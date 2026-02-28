@@ -16,7 +16,7 @@ export async function GET(_req: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid staff id" }, { status: 400 })
   }
 
-  const [latestRequest, staff] = await Promise.all([
+  const [latestRequest, staff, ordersResult] = await Promise.all([
     prisma.uniformRequest.findFirst({
       where: { requestedBy },
       select: { createdAt: true },
@@ -24,13 +24,28 @@ export async function GET(_req: Request, context: RouteContext) {
     }),
     prisma.staff.findUnique({
       where: { id: requestedBy },
-      select: { uniformLimit: true } as never,
+      select: { uniformLimit: true },
     }),
-  ]) as [{ createdAt: Date } | null, { uniformLimit: number | null } | null]
+    prisma.uniformRequest.aggregate({
+      where: {
+        requestedBy,
+        status: { not: "CANCELLED" },
+      },
+      _sum: { quantity: true },
+      _count: { id: true },
+    }),
+  ])
 
   if (!staff) {
     return NextResponse.json({ error: "Staff member not found" }, { status: 404 })
   }
+
+  const totalOrdered = ordersResult._sum.quantity ?? 0
+  const totalRequests = ordersResult._count.id
+  const remaining =
+    typeof staff.uniformLimit === "number"
+      ? Math.max(0, staff.uniformLimit - totalOrdered)
+      : null
 
   if (!latestRequest) {
     return NextResponse.json({
@@ -39,6 +54,9 @@ export async function GET(_req: Request, context: RouteContext) {
       lastRequestedAt: null,
       nextAllowedAt: null,
       uniformLimit: staff.uniformLimit,
+      totalOrdered,
+      totalRequests,
+      remaining,
     })
   }
 
@@ -52,6 +70,9 @@ export async function GET(_req: Request, context: RouteContext) {
     lastRequestedAt: latestRequest.createdAt.toISOString(),
     nextAllowedAt: nextAllowedAt.toISOString(),
     uniformLimit: staff.uniformLimit,
+    totalOrdered,
+    totalRequests,
+    remaining,
   })
 }
 
@@ -79,9 +100,9 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     const staff = await prisma.staff.update({
       where: { id: requestedBy },
-      data: { uniformLimit } as never,
-      select: { id: true, uniformLimit: true } as never,
-    }) as { id: number; uniformLimit: number | null }
+      data: { uniformLimit },
+      select: { id: true, uniformLimit: true },
+    })
 
     return NextResponse.json(staff)
   } catch {

@@ -2,68 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UniformRequestDetail as RequestDetail } from "./types";
-import { formatStatus, getStatusBadgeClass } from "./utils";
+import { formatStatus, getStatusActions, getStatusBadgeClass, parseUniformType, VARIANT_CLASSES } from "./utils";
+
 
 type Props = {
   requestId: number;
   onClose: () => void;
   onStatusChanged: (id: number, newStatus: string) => void;
   isAdmin?: boolean;
-  onReorder?: (detail: RequestDetail) => void;
-};
-
-type StatusAction = {
-  label: string;
-  nextStatus: string;
-  variant: "primary" | "success" | "warning" | "danger" | "neutral";
-};
-
-function getStatusActions(status: string, isAdmin?: boolean): StatusAction[] {
-  if (isAdmin) {
-    if (status === "ARRIVED") {
-      return [{ label: "Mark Collected", nextStatus: "COLLECTED", variant: "success" }];
-    }
-    return [];
-  }
-
-  const actions: StatusAction[] = [];
-
-  switch (status) {
-    case "REQUEST":
-      actions.push({ label: "Mark Dispatched", nextStatus: "DISPATCHED", variant: "primary" });
-      break;
-    case "DISPATCHED":
-      actions.push({ label: "Mark In Transit", nextStatus: "IN_TRANSIT", variant: "primary" });
-      break;
-    case "IN_TRANSIT":
-      actions.push({ label: "Mark Arrived", nextStatus: "ARRIVED", variant: "warning" });
-      break;
-    case "ARRIVED":
-      actions.push({ label: "Mark Collected", nextStatus: "COLLECTED", variant: "success" });
-      break;
-    case "COLLECTED":
-      actions.push({ label: "Mark Completed", nextStatus: "COMPLETED", variant: "success" });
-      break;
-  }
-
-  if (status !== "CANCELLED" && status !== "COMPLETED" && status !== "COLLECTED") {
-    actions.push({ label: "Archive (Cancel)", nextStatus: "CANCELLED", variant: "danger" });
-  }
-
-  return actions;
-}
-
-const VARIANT_CLASSES: Record<StatusAction["variant"], string> = {
-  primary:
-    "bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-400",
-  success:
-    "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-400",
-  warning:
-    "bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-400",
-  danger:
-    "border border-red-300 bg-white text-red-600 hover:bg-red-50 focus:ring-red-300",
-  neutral:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-300",
+  onReorder?: (detail: RequestDetail, reorderReason: string) => void;
 };
 
 export default function UniformRequestDetail({ requestId, onClose, onStatusChanged, isAdmin = false, onReorder }: Props) {
@@ -76,12 +23,23 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
   const [notesValue, setNotesValue] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [showReorderModal, setShowReorderModal] = useState(false);
+  const [reorderReason, setReorderReason] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setIsVisible(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  const openReorderModal = () => setShowReorderModal(true);
+  const handleReorderSubmit = () => {
+    if (!detail) return;
+    onReorder?.(detail, reorderReason.trim());
+    setShowReorderModal(false);
+    setReorderReason("");
+    handleClose();
+  };
 
   const handleClose = useCallback(() => {
     setIsVisible(false);
@@ -129,13 +87,30 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
     setPendingStatus(nextStatus);
 
     try {
-      const res = await fetch(`/api/uniform/requests/${requestId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
+      let res: Response;
 
-      if (!res.ok) throw new Error("Failed to update status.");
+      if (nextStatus === "CANCELLED" && !isAdmin) {
+        res = await fetch(
+          `/api/staff-management/staffs/${detail.requestedBy}/uniform-request/cancel`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestId }),
+          },
+        );
+      } else {
+        res = await fetch(`/api/uniform/requests/${requestId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        });
+      }
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Failed to update status.");
+      }
+
       const updated = (await res.json()) as RequestDetail;
       setDetail(updated);
       onStatusChanged(requestId, updated.status);
@@ -170,10 +145,53 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
   };
 
   const actions = detail ? getStatusActions(detail.status, isAdmin) : [];
-  const showReorder = isAdmin && detail !== null && (detail.status === "COLLECTED" || detail.status === "COMPLETED");
+  const showReorder = isAdmin && detail !== null && detail.status === "COLLECTED";
 
   return (
     <>
+      {/* Reorder reason modal */}
+      {showReorderModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reorder-modal-title"
+          >
+            <h3 id="reorder-modal-title" className="text-base font-semibold text-slate-900">
+              Input reason as to why a re-order is occurring
+            </h3>
+            <textarea
+              value={reorderReason}
+              onChange={(e) => setReorderReason(e.target.value)}
+              rows={4}
+              placeholder="e.g. Wrong size delivered, item damaged..."
+              className="mt-3 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReorderModal(false);
+                  setReorderReason("");
+                }}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleReorderSubmit}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Request to re-order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Backdrop */}
       <div
         className={`fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300 ${isVisible ? "opacity-100" : "opacity-0"}`}
@@ -234,8 +252,8 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                 </h3>
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                   <div>
-                    <dt className="font-medium text-slate-500">Request No</dt>
-                    <dd className="mt-0.5 font-mono text-slate-900">{detail.requestNo}</dd>
+                    <dt className="font-medium text-slate-500">EAN</dt>
+                    <dd className="mt-0.5 font-mono text-slate-900">{detail.ean}</dd>
                   </div>
                   <div>
                     <dt className="font-medium text-slate-500">Tracking ID</dt>
@@ -251,11 +269,15 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                     <dt className="font-medium text-slate-500">Role</dt>
                     <dd className="mt-0.5 text-slate-900">{detail.staff?.role ?? "—"}</dd>
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <dt className="font-medium text-slate-500">Created</dt>
                     <dd className="mt-0.5 text-slate-900">
                       {new Date(detail.createdAt).toLocaleString()}
                     </dd>
+                  </div>
+                  <div>
+                    <dt className="font-medium text-slate-500">Store</dt>
+                    <dd className="mt-0.5 text-slate-900">{detail.storeName ?? "—"}</dd>
                   </div>
                 </dl>
               </div>
@@ -320,24 +342,25 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                   <p className="text-sm italic text-slate-400">No items on this request.</p>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <table className="table-auto min-w-full divide-y divide-slate-200 text-sm">
                       <thead className="bg-slate-50">
                         <tr>
                           <th className="px-3 py-2 text-left font-medium text-slate-600">Type</th>
-                          <th className="px-3 py-2 text-left font-medium text-slate-600">Size</th>
-                          <th className="px-3 py-2 text-right font-medium text-slate-600">Qty</th>
-                          <th className="px-3 py-2 text-left font-medium text-slate-600">Remarks</th>
+                          <th className="px-3 py-2 text-center font-medium text-slate-600">Size</th>
+                          <th className="w-16 px-3 py-2 text-right font-medium text-slate-600">Qty</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
-                        {detail.items.map((item) => (
-                          <tr key={item.id}>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-800">{item.uniformType}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{item.size}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-slate-900">{item.quantity}</td>
-                            <td className="px-3 py-2 text-slate-600">{item.remarks || "—"}</td>
-                          </tr>
-                        ))}
+                        {detail.items.map((item) => {
+                          const { type, size } = parseUniformType(item.uniformType);
+                          return (
+                            <tr key={item.id}>
+                              <td className="whitespace-nowrap px-3 py-2 text-slate-800">{type}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-center text-slate-700">{size}</td>
+                              <td className="w-16 whitespace-nowrap px-3 py-2 text-right font-medium text-slate-900">{item.quantity}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -350,12 +373,13 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                   Status Timeline
                 </h3>
                 <ol className="flex items-center gap-0">
-                  {["REQUEST", "DISPATCHED", "IN_TRANSIT", "ARRIVED", "COLLECTED", "COMPLETED"].map((s, idx, arr) => {
-                    const statusOrder = ["REQUEST", "DISPATCHED", "IN_TRANSIT", "ARRIVED", "COLLECTED", "COMPLETED"];
+                  {["REQUEST", "DISPATCHED", "IN_TRANSIT", "ARRIVED", "COLLECTED"].map((s, idx, arr) => {
+                    const statusOrder = ["REQUEST", "DISPATCHED", "IN_TRANSIT", "ARRIVED", "COLLECTED"];
+                    const terminalDoneStatuses = ["COLLECTED"];
                     const currentIdx = statusOrder.indexOf(detail.status);
                     const thisIdx = statusOrder.indexOf(s);
                     const isDone = thisIdx <= currentIdx && detail.status !== "CANCELLED";
-                    const isCurrent = s === detail.status;
+                    const isCurrent = s === detail.status && !terminalDoneStatuses.includes(detail.status);
 
                     return (
                       <li key={s} className="flex flex-1 items-center">
@@ -369,7 +393,7 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                                 : "bg-slate-200 text-slate-500"
                             }`}
                           >
-                            {isDone && !isCurrent ? (
+                            {isDone ? (
                               <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414L8.414 15 3.293 9.879a1 1 0 111.414-1.414L8.414 12.172l6.879-6.879a1 1 0 011.414 0z" clipRule="evenodd" />
                               </svg>
@@ -403,20 +427,28 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
               <p className="mb-3 text-xs text-red-600">{actionError}</p>
             )}
 
+            {isAdmin && actions.length > 0 && (
+              <div className="mb-3 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <p className="text-xs font-medium text-amber-700">
+                  Dispatch team hasn&apos;t updated? Use this to jump straight to collected.
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-3">
               {actions.length === 0 && !showReorder ? (
                 <p className="text-sm text-slate-500">
                   {detail.status === "CANCELLED"
                     ? "This request is archived and can no longer be updated."
-                    : isAdmin
-                    ? "No actions available at this stage."
                     : "No further actions available."}
                 </p>
               ) : (
                 <>
                   {actions.length > 0 && (
                     <>
-                      <span className="text-xs font-medium text-slate-500">Actions:</span>
                       {actions.map((action) => (
                         <button
                           key={action.nextStatus}
@@ -434,7 +466,7 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                   {showReorder && (
                     <button
                       type="button"
-                      onClick={() => onReorder?.(detail)}
+                      onClick={openReorderModal}
                       className="ml-auto flex items-center gap-2 rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 shadow-sm transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

@@ -10,11 +10,6 @@ datasource db {
   provider = "sqlite"
 }
 
-enum UserRole {
-  STAFF
-  MANAGER
-}
-
 enum StaffRole {
   STAFF
   MANAGER
@@ -23,7 +18,6 @@ enum StaffRole {
 
 enum RequestStatus {
   PENDING
-  REJECTED
   COMPLETED
   CANCELLED
   DISPATCHED
@@ -33,25 +27,14 @@ enum RequestStatus {
   COLLECTED
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  firstName String
-  lastName  String
-  email     String   @unique
-  username  String   @unique
-  role      UserRole @default(STAFF)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-}
-
 model Store {
   id        Int      @id @default(autoincrement())
   name      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  staffs Staff[]
+  staffs     Staff[]
+  deliveries Delivery[]
 }
 
 model Staff {
@@ -65,44 +48,55 @@ model Staff {
 
   store           Store            @relation(fields: [storeId], references: [id])
   uniformRequests UniformRequest[]
+  deliveries      Delivery[]
 
   @@index([storeId])
   @@index([role])
 }
 
 model StockItem {
-  ean       String   @id
+  ean       String
   name      String
   qty       Int
   createdAt DateTime @default(now())
 
+  uniformRequests UniformRequest[]
+
+  @@id([ean, name])
   @@index([name])
 }
 
 model UniformRequest {
-  id          Int           @id @default(autoincrement())
-  requestNo   String        @unique
-  trackingId  String        @unique
-  requestedBy Int
-  status      RequestStatus @default(PENDING)
-  notes       String?
-  createdAt   DateTime      @default(now())
+  id              Int           @id @default(autoincrement())
+  ean             String
+  stockItemName   String
+  trackingId      String        @unique
+  requestedBy     Int
+  quantity        Int           @default(0)
+  status          RequestStatus @default(PENDING)
+  notes           String?
+  createdAt       DateTime      @default(now())
 
-  staff Staff                @relation(fields: [requestedBy], references: [id])
-  items UniformRequestItem[]
+  staff     Staff     @relation(fields: [requestedBy], references: [id])
+  stockItem StockItem @relation(fields: [ean, stockItemName], references: [ean, name])
+  delivery  Delivery?
 
   @@index([requestedBy, status])
+  @@index([ean])
 }
 
-model UniformRequestItem {
-  id              Int    @id @default(autoincrement())
-  uniformRequestId Int
-  uniformType     String
-  size            String
-  quantity        Int    @default(1)
-  remarks         String?
+model Delivery {
+  id         Int      @id @default(autoincrement())
+  trackingId String   @unique
+  storeId    Int
+  staffId    Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  uniformRequest UniformRequest @relation(fields: [uniformRequestId], references: [id], onDelete: Cascade)
+  uniformRequest UniformRequest @relation(fields: [trackingId], references: [trackingId])
+  store          Store          @relation(fields: [storeId], references: [id])
+  staff          Staff          @relation(fields: [staffId], references: [id])
 
-  @@index([uniformRequestId])
+  @@index([storeId])
+  @@index([staffId])
 }

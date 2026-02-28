@@ -11,23 +11,8 @@ type ValidStockRow = {
   rawRow: ParsedRow;
 };
 
-const buildStockKey = (ean: string) => normalizeForKey(ean);
 const isNumericEan = (value: string) => /^\d+$/.test(value.trim());
-
-const findNextAvailableEan = (requestedEan: string, usedEanKeys: Set<string>) => {
-  const requested = requestedEan.trim();
-  if (!usedEanKeys.has(buildStockKey(requested))) return requested;
-
-  const width = requested.length;
-  let counter = BigInt(requested);
-  let candidate = requested;
-  do {
-    counter += BigInt(1);
-    const next = counter.toString();
-    candidate = next.length < width ? next.padStart(width, "0") : next;
-  } while (usedEanKeys.has(buildStockKey(candidate)));
-  return candidate;
-};
+const compositeKey = (ean: string, name: string) => normalizeForKey(ean) + "|" + normalizeForKey(name);
 
 const buildErrorResponse = (message: string, status = 400) =>
   NextResponse.json(
@@ -68,7 +53,6 @@ export async function POST(req: Request) {
     }
 
     const invalidRows: InvalidRow[] = [];
-    const notices: string[] = [];
     const validRows: ValidStockRow[] = [];
 
     // --- Step 1: Validate rows ---
@@ -77,12 +61,12 @@ export async function POST(req: Request) {
       const rowErrors: string[] = [];
 
       const ean = getFieldValue(rawRow, ["ean", "EAN"]);
-      const name = getFieldValue(rawRow, ["name", "Name"]);
+      const nameRaw = getFieldValue(rawRow, ["name", "Name"]);
       const qtyRaw = getFieldValue(rawRow, ["qty", "Qty", "quantity"]);
 
       if (!ean) rowErrors.push("Missing EAN");
       else if (!isNumericEan(ean)) rowErrors.push("EAN must contain digits only");
-      if (!name) rowErrors.push("Missing Name");
+      if (!nameRaw) rowErrors.push("Missing Name");
 
       let qty = 0;
       if (!qtyRaw) rowErrors.push("Missing Qty");
@@ -97,16 +81,15 @@ export async function POST(req: Request) {
         continue;
       }
 
-      validRows.push({ rowNumber, ean, name, qty, rawRow });
+      validRows.push({ rowNumber, ean, name: nameRaw!.trim(), qty, rawRow });
     }
 
-    // --- Step 2: Fetch existing stock and track used EANs ---
+    // --- Step 2: Fetch existing stock and build composite key set ---
     const existingRows = await prisma.stockItem.findMany({
       select: { ean: true, name: true },
     });
 
-    const existingStockKeys = new Set(existingRows.map((item) => buildStockKey(item.ean)));
-    const existingNameKeys = new Set(existingRows.map((item) => normalizeForKey(item.name)));
+    const existingKeys = new Set(existingRows.map((item) => compositeKey(item.ean, item.name)));
 
     // --- Step 3: Insert valid rows ---
     let success = 0;
@@ -114,23 +97,18 @@ export async function POST(req: Request) {
 
     for (const row of validRows) {
       try {
-        const nameKey = normalizeForKey(row.name);
-        if (existingNameKeys.has(nameKey)) {
+        const key = compositeKey(row.ean, row.name);
+        if (existingKeys.has(key)) {
           skipped++;
-          invalidRows.push({ rowNumber: row.rowNumber, errors: ["Item name already exists."], row: row.rawRow });
+          invalidRows.push({ rowNumber: row.rowNumber, errors: ["Item already exists."], row: row.rawRow });
           continue;
         }
 
-        const resolvedEan = findNextAvailableEan(row.ean, existingStockKeys);
-        if (resolvedEan !== row.ean)
-          notices.push(`Row ${row.rowNumber}: EAN ${row.ean} was duplicated. Saved as ${resolvedEan}.`);
-
         await prisma.stockItem.create({
-          data: { ean: resolvedEan, name: row.name, qty: row.qty },
+          data: { ean: row.ean, name: row.name, qty: row.qty },
         });
 
-        existingStockKeys.add(buildStockKey(resolvedEan));
-        existingNameKeys.add(nameKey);
+        existingKeys.add(key);
         success++;
       } catch {
         invalidRows.push({ rowNumber: row.rowNumber, errors: ["Database save failed for this row"], row: row.rawRow });
@@ -144,8 +122,6 @@ export async function POST(req: Request) {
       importType: "stock",
       summary: { importType: "stock", fileName: file.name, processedAt: new Date().toISOString(), total: records.length, valid, success, skipped, failed },
       invalidRows,
-      errors: notices,
-      notices,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -5,7 +5,7 @@ export async function GET() {
   const requests = await prisma.uniformRequest.findMany({
     select: {
       id: true,
-      requestNo: true,
+      ean: true,
       trackingId: true,
       status: true,
       notes: true,

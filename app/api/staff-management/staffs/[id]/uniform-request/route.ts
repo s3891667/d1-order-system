@@ -20,24 +20,32 @@ export async function POST(req: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid staff id" }, { status: 400 })
   }
 
-  const body = await req.json() as Partial<Prisma.UniformRequestUncheckedCreateInput> & {
-    uniformItem?: string
+  const body = await req.json() as {
+    ean?: string
+    name?: string
     quantity?: number
+    status?: string
+    notes?: string
   }
   const payload: Pick<Prisma.UniformRequestUncheckedCreateInput, "status" | "notes"> = {}
-  const uniformItem = typeof body.uniformItem === "string" ? body.uniformItem.trim() : ""
+  const ean = typeof body.ean === "string" ? body.ean.trim() : ""
+  const stockItemName = typeof body.name === "string" ? body.name.trim() : ""
   const quantity = Number(body.quantity)
 
   if (body.status) {
-    payload.status = body.status
+    payload.status = body.status as Prisma.UniformRequestUncheckedCreateInput["status"]
   }
 
   if (typeof body.notes === "string") {
     payload.notes = body.notes
   }
 
-  if (!uniformItem) {
-    return NextResponse.json({ error: "Uniform item is required." }, { status: 400 })
+  if (!ean) {
+    return NextResponse.json({ error: "Uniform item EAN is required." }, { status: 400 })
+  }
+
+  if (!stockItemName) {
+    return NextResponse.json({ error: "Uniform item name is required." }, { status: 400 })
   }
 
   if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -54,17 +62,30 @@ export async function POST(req: Request, context: RouteContext) {
       const result = await prisma.$transaction(async (tx) => {
         const staff = await tx.staff.findUnique({
           where: { id: requestedBy },
-          select: { uniformLimit: true } as never,
-        }) as { uniformLimit: number | null } | null
+          select: { uniformLimit: true, storeId: true },
+        })
 
         if (!staff) {
           return { outcome: "staff_not_found" as const }
         }
 
-        if (typeof staff.uniformLimit === "number" && quantity > staff.uniformLimit) {
-          return {
-            outcome: "uniform_limit_error" as const,
-            uniformLimit: staff.uniformLimit,
+        if (typeof staff.uniformLimit === "number") {
+          const usedResult = await tx.uniformRequest.aggregate({
+            where: {
+              requestedBy,
+              status: { not: "CANCELLED" },
+            },
+            _sum: { quantity: true },
+          })
+          const totalOrdered = usedResult._sum.quantity ?? 0
+          const remaining = staff.uniformLimit - totalOrdered
+          if (quantity > remaining) {
+            return {
+              outcome: "uniform_limit_error" as const,
+              uniformLimit: staff.uniformLimit,
+              totalOrdered,
+              remaining,
+            }
           }
         }
 
@@ -86,7 +107,8 @@ export async function POST(req: Request, context: RouteContext) {
 
         const stockUpdate = await tx.stockItem.updateMany({
           where: {
-            ean: uniformItem,
+            ean,
+            name: stockItemName,
             qty: { gte: quantity },
           },
           data: {
@@ -96,7 +118,7 @@ export async function POST(req: Request, context: RouteContext) {
 
         if (stockUpdate.count === 0) {
           const stock = await tx.stockItem.findUnique({
-            where: { ean: uniformItem },
+            where: { ean_name: { ean, name: stockItemName } },
             select: { qty: true },
           })
 
@@ -107,7 +129,7 @@ export async function POST(req: Request, context: RouteContext) {
         }
 
         const remainingStock = await tx.stockItem.findUnique({
-          where: { ean: uniformItem },
+          where: { ean_name: { ean, name: stockItemName } },
           select: { qty: true },
         })
 
@@ -115,8 +137,18 @@ export async function POST(req: Request, context: RouteContext) {
           data: {
             ...payload,
             requestedBy,
-            requestNo: trackingId,
+            ean,
+            stockItemName,
             trackingId,
+            quantity,
+          },
+        })
+
+        await tx.delivery.create({
+          data: {
+            trackingId,
+            storeId: staff.storeId,
+            staffId: requestedBy,
           },
         })
 
@@ -151,8 +183,10 @@ export async function POST(req: Request, context: RouteContext) {
       if (result.outcome === "uniform_limit_error") {
         return NextResponse.json(
           {
-            error: "Requested quantity exceeds staff uniform limit.",
+            error: "Requested quantity exceeds remaining allowance.",
             uniformLimit: result.uniformLimit,
+            totalOrdered: result.totalOrdered,
+            remaining: result.remaining,
           },
           { status: 409 },
         )
@@ -167,7 +201,6 @@ export async function POST(req: Request, context: RouteContext) {
 
       return NextResponse.json({
         ...result.record,
-        requestedItem: uniformItem,
         requestedQuantity: quantity,
         remainingStock: result.remainingStock,
         isLowStock: result.remainingStock <= LOW_STOCK_THRESHOLD,
@@ -176,7 +209,7 @@ export async function POST(req: Request, context: RouteContext) {
       const isUniqueRequestNoError =
         error instanceof Error &&
         error.message.includes("Unique constraint failed") &&
-        (error.message.includes("requestNo") || error.message.includes("trackingId"))
+        error.message.includes("trackingId")
 
       if (!isUniqueRequestNoError || attempt === MAX_TRACKING_RETRIES - 1) {
         throw error
