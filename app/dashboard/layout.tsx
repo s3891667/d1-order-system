@@ -11,6 +11,7 @@ const ROUTES = {
   createRequest: "/dashboard/create-request",
   trackStatus: "/dashboard/track-status",
   orders: "/dashboard/orders",
+  stocks: "/dashboard/stocks",
 } as const;
 
 export default function DashboardLayout({
@@ -78,14 +79,12 @@ export default function DashboardLayout({
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Menu
               </p>
-              {!isDispatchAdmin && (
                 <Link
                   href={ROUTES.import}
                   className={menuLinkClass(ROUTES.import)}
                 >
                   Import Data
                 </Link>
-              )}
               {!isDispatchAdmin && (
                 <Link
                   href={ROUTES.createRequest}
@@ -101,12 +100,20 @@ export default function DashboardLayout({
                 Track Request Status
               </Link>
               {isDispatchAdmin && (
-                <Link
-                  href={ROUTES.orders}
-                  className={menuLinkClass(ROUTES.orders)}
-                >
-                  Orders Management
-                </Link>
+                <>
+                  <Link
+                    href={ROUTES.stocks}
+                    className={menuLinkClass(ROUTES.stocks)}
+                  >
+                    Stock Inventory
+                  </Link>
+                  <Link
+                    href={ROUTES.orders}
+                    className={menuLinkClass(ROUTES.orders)}
+                  >
+                    Orders Management
+                  </Link>
+                </>
               )}
             </nav>
           </div>

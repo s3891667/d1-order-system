@@ -9,6 +9,8 @@ type Props = {
   onUpload: () => void;
   disabled: boolean;
   loading: boolean;
+  canImportStaff?: boolean;
+  canImportStock?: boolean;
 };
 
 export default function ImportForm({
@@ -18,33 +20,48 @@ export default function ImportForm({
   onUpload,
   disabled,
   loading,
+  canImportStaff = true,
+  canImportStock = true,
 }: Props) {
+  const showToggle = canImportStaff && canImportStock;
+  const hasAnyPermission = canImportStaff || canImportStock;
+
+  if (!hasAnyPermission) {
+    return (
+      <div className="rounded border border-slate-200 bg-slate-50 p-4">
+        <p className="text-slate-600">You don&apos;t have permission to import data.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded border border-slate-200 bg-slate-50 p-4">
-      <div className="mb-4 flex gap-2">
-        <button
-          type="button"
-          onClick={() => onImportTypeChange("staff")}
-          className={`rounded px-3 py-2 text-sm transition ${
-            importType === "staff"
-              ? "bg-blue-600 text-white"
-              : "border border-slate-300 text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          Staff Import
-        </button>
-        <button
-          type="button"
-          onClick={() => onImportTypeChange("stock")}
-          className={`rounded px-3 py-2 text-sm transition ${
-            importType === "stock"
-              ? "bg-blue-600 text-white"
-              : "border border-slate-300 text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          Stock Import
-        </button>
-      </div>
+      {showToggle && (
+        <div className="mb-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => onImportTypeChange("staff")}
+            className={`rounded px-3 py-2 text-sm transition ${
+              importType === "staff"
+                ? "bg-blue-600 text-white"
+                : "border border-slate-300 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Staff Import
+          </button>
+          <button
+            type="button"
+            onClick={() => onImportTypeChange("stock")}
+            className={`rounded px-3 py-2 text-sm transition ${
+              importType === "stock"
+                ? "bg-blue-600 text-white"
+                : "border border-slate-300 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Stock Import
+          </button>
+        </div>
+      )}
 
       <div className="mb-4 rounded border border-slate-200 bg-white p-3 text-sm text-slate-700">
         {importType === "staff" ? (

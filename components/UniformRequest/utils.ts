@@ -178,7 +178,7 @@ export const fetchStaff = async (): Promise<StaffOption[]> => {
 
 export const fetchUniformStock = async (): Promise<StockOption[]> => {
   try {
-    const res = await fetch("/api/uniform/stock");
+    const res = await fetch("/api/uniform/stocks");
     if (!res.ok) throw new Error("Failed to fetch uniform stock");
     return (await res.json()) as StockOption[];
   } catch (error) {
