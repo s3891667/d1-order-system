@@ -336,9 +336,9 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
               {/* Items table */}
               <div>
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Requested Items ({detail.items.length})
+                  Requested Items ({(detail.items ?? []).length})
                 </h3>
-                {detail.items.length === 0 ? (
+                {(detail.items ?? []).length === 0 ? (
                   <p className="text-sm italic text-slate-400">No items on this request.</p>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -351,7 +351,7 @@ export default function UniformRequestDetail({ requestId, onClose, onStatusChang
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
-                        {detail.items.map((item) => {
+                        {(detail.items ?? []).map((item) => {
                           const { type, size } = parseUniformType(item.uniformType);
                           return (
                             <tr key={item.id}>

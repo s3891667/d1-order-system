@@ -48,7 +48,7 @@ export default function UniformRequestStatusView({ isDispatchAdmin = false, onRe
           staffRole: detail.staff?.role as UniformRequestFormValues["staffRole"],
           staffMember: String(detail.requestedBy),
           ean: detail.ean,
-          name: detail.items[0]?.uniformType ?? detail.ean,
+          name: detail.items?.[0]?.uniformType ?? detail.ean,
           quantity: detail.quantity,
           notes: reorderReason ? `Re-order reason: ${reorderReason}` : "",
         });

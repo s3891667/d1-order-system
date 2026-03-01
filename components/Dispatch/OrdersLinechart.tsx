@@ -12,7 +12,7 @@ import {
   PointElement,
   Title,
 } from "chart.js";
-import { CHART_COLORS, months, numbers, transparentize } from "./chartUtils";
+import { CHART_COLORS, months, numbers, transparentize } from "./utils";
 
 Chart.register(
   LineController,
