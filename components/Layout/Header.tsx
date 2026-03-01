@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -11,6 +11,7 @@ import Link from "next/link";
 export default function Header() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const checkSession = async () => {
@@ -24,7 +25,7 @@ export default function Header() {
     };
 
     checkSession();
-  }, [router]);
+  }, [pathname]);
 
   const handleLogout = async () => {
     await fetch("/api/session/logout", { method: "POST", credentials: "include" });

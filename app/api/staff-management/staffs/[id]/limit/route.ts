@@ -68,7 +68,7 @@ export async function GET(_req: Request, context: RouteContext) {
     canRequest,
     cooldownHours: UNIFORM_REQUEST_COOLDOWN_HOURS,
     lastRequestedAt: latestRequest.createdAt.toISOString(),
-    nextAllowedAt: nextAllowedAt.toISOString(),
+    nextAllowedAt: canRequest ? null : nextAllowedAt.toISOString(),
     uniformLimit: staff.uniformLimit,
     totalOrdered,
     totalRequests,

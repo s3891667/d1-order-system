@@ -24,6 +24,7 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
 
   const [formValues, setFormValues] = useState<UniformRequestFormValues>(mergedInitial);
   const [quantityInput, setQuantityInput] = useState(String(mergedInitial.quantity));
+  const [uniformLimitInput, setUniformLimitInput] = useState(String(mergedInitial.uniformLimit));
   const [hasAppliedInitial, setHasAppliedInitial] = useState(false);
 
   useEffect(() => {
@@ -31,6 +32,7 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
       const merged = { ...INITIAL_FORM_VALUES, ...initialValuesProp };
       setFormValues(merged);
       setQuantityInput(String(merged.quantity));
+      setUniformLimitInput(String(merged.uniformLimit));
       setIsRoleStepVisible(false);
       setIsFormVisible(true);
       setHasAppliedInitial(true);
@@ -72,14 +74,12 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
     [uniformStock, formValues.ean, formValues.name]
   );
   const effectiveRemaining = formValues.uniformLimit - totalOrdered;
+  const maxQuantityFromStock = selectedStockItem ? Math.max(selectedStockItem.qty, 1) : 1;
   const isSelectedItemLowStock = Boolean(selectedStockItem && selectedStockItem.qty <= LOW_STOCK_THRESHOLD);
   const exceedsStock = Boolean(selectedStockItem && formValues.quantity > selectedStockItem.qty);
   const exceedsUniformLimit = formValues.quantity > effectiveRemaining;
   const isQuantityZero = quantityInput.trim() !== "" && Number(quantityInput) === 0;
   const hasCooldownBlock = cooldownStatus ? !cooldownStatus.canRequest : false;
-  const showsCooldownWaitMessage = Boolean(
-    cooldownStatus && !cooldownStatus.canRequest && cooldownStatus.nextAllowedAt
-  );
 
   useEffect(() => {
     if (!formValues.staffMember) {
@@ -121,6 +121,24 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
 
     return () => controller.abort();
   }, [formValues.staffMember]);
+
+  useEffect(() => {
+    setUniformLimitInput(String(formValues.uniformLimit));
+  }, [formValues.uniformLimit]);
+
+  useEffect(() => {
+    if (formValues.quantity > maxQuantityFromStock) {
+      const clamped = maxQuantityFromStock;
+      setFormValues((prev) => ({ ...prev, quantity: clamped }));
+      setQuantityInput(String(clamped));
+    }
+  }, [maxQuantityFromStock, formValues.quantity]);
+
+  useEffect(() => {
+    if (effectiveRemaining <= 0 && (formValues.ean || formValues.name)) {
+      setFormValues((prev) => ({ ...prev, ean: "", name: "" }));
+    }
+  }, [effectiveRemaining, formValues.ean, formValues.name]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
@@ -164,7 +182,6 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
       return;
     }
 
-    //TODO:
     const res = await fetch(`/api/staff-management/staffs/${formValues.staffMember}/uniform-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -236,8 +253,9 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
 
   const handleQuantityInputBlur = () => {
     const parsedQuantity = Number(quantityInput);
-    const nextQuantity =
+    let nextQuantity =
       Number.isFinite(parsedQuantity) && parsedQuantity >= 1 ? Math.floor(parsedQuantity) : 1;
+    nextQuantity = Math.min(nextQuantity, maxQuantityFromStock);
 
     setFormValues((prev) => ({ ...prev, quantity: nextQuantity }));
     setQuantityInput(String(nextQuantity));
@@ -368,13 +386,21 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
                 id="uniformLimit"
                 type="number"
                 min={1}
-                value={formValues.uniformLimit}
-                onChange={(e) =>
-                  setFormValues((prev) => ({
-                    ...prev,
-                    uniformLimit: Math.max(1, Number(e.target.value) || 1),
-                  }))
-                }
+                value={uniformLimitInput}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setUniformLimitInput(next);
+                  const parsed = Number(next);
+                  if (Number.isFinite(parsed) && parsed >= 1) {
+                    setFormValues((prev) => ({ ...prev, uniformLimit: Math.floor(parsed) }));
+                  }
+                }}
+                onBlur={() => {
+                  const parsed = Number(uniformLimitInput);
+                  const clamped = Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : 1;
+                  setFormValues((prev) => ({ ...prev, uniformLimit: clamped }));
+                  setUniformLimitInput(String(clamped));
+                }}
                 required
                 disabled={!formValues.staffMember || !isEditingUniformLimit}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
@@ -382,7 +408,7 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
               {formValues.staffMember && (
                 <div className="mt-2 flex items-center gap-2">
                   <p className="text-sm text-slate-500">
-                    Pre-filled from saved staff limit. Click Edit to change it.
+                    Click Edit to change staff limit order.
                   </p>
                   <span
                     className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -418,15 +444,17 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
                   setFormValues((prev) => ({ ...prev, ean: selectedEan, name: selectedName }));
                 }}
                 required
-                disabled={isLoadingStock}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                disabled={isLoadingStock || effectiveRemaining <= 0}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               >
                 <option value="">
-                  {isLoadingStock
-                    ? "Loading uniform stock..."
-                    : uniformStock.length === 0
-                      ? "No uniform stock available."
-                      : "Select uniform item"}
+                  {effectiveRemaining <= 0
+                    ? "Cannot select - allowance used (0 remaining)"
+                    : isLoadingStock
+                      ? "Loading uniform stock..."
+                      : uniformStock.length === 0
+                        ? "No uniform stock available."
+                        : "Select uniform item"}
                 </option>
                 {uniformStock.map((item) => (
                   <option key={`${item.ean}::${item.name}`} value={`${item.ean}::${item.name}`}>
@@ -436,6 +464,11 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
                 ))}
               </select>
               {stockError && <p className="mt-1 text-sm text-red-600">{stockError}</p>}
+              {effectiveRemaining <= 0 && (
+                <p className="mt-1 text-sm text-amber-700">
+                  Uniform item cannot be selected. Allowance used ({effectiveRemaining} remaining of {formValues.uniformLimit}).
+                </p>
+              )}
               {selectedStockItem && selectedStockItem.qty <= 0 && (
                 <p className="mt-1 text-sm text-red-600">This item is currently out of stock.</p>
               )}
@@ -454,9 +487,10 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
                 id="quantity"
                 type="number"
                 min={1}
-                max={selectedStockItem ? Math.max(Math.min(selectedStockItem.qty, effectiveRemaining), 1) : effectiveRemaining}
+                max={maxQuantityFromStock}
                 step={1}
                 value={quantityInput}
+                disabled={!selectedStockItem || selectedStockItem.qty <= 0}
                 onChange={(e) => {
                   const nextValue = e.target.value;
                   setQuantityInput(nextValue);
@@ -471,19 +505,14 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
                 }}
                 onBlur={handleQuantityInputBlur}
                 required
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
-              {exceedsStock && selectedStockItem && (
-                <p className="mt-1 text-sm text-red-600">
-                  Quantity cannot exceed available stock ({selectedStockItem.qty}).
-                </p>
-              )}
               {isQuantityZero && (
                 <p className="mt-1 text-sm text-red-600">Quantity cannot be 0. Please enter at least 1.</p>
               )}
-              {exceedsUniformLimit && (
-                <p className="mt-1 text-sm text-red-600">
-                  Quantity cannot exceed remaining allowance ({effectiveRemaining} left of {formValues.uniformLimit}).
+              {exceedsUniformLimit && effectiveRemaining > 0 && (
+                <p className="mt-1 text-sm text-amber-700">
+                  Requested quantity exceeds remaining allowance. Only {effectiveRemaining} left of {formValues.uniformLimit}.
                 </p>
               )}
             </div>
@@ -508,7 +537,6 @@ export default function UniformRequestForm({ initialValues: initialValuesProp }:
               type="submit"
               disabled={
                 hasCooldownBlock ||
-                showsCooldownWaitMessage ||
                 isCheckingCooldown ||
                 !selectedStockItem ||
                 selectedStockItem.qty <= 0 ||

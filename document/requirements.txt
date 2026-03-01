@@ -1,27 +1,27 @@
 1. Import Data
-    a. Validate the data
-    b. Handle invalid rows
-    c. Provide import summary
-    d. (you can store the data in sqlite, firebase, supabase free tiers)
+    a. Validate the data OK
+    b. Handle invalid rows OK
+    c. Provide import summary OK
+    d. (you can store the data in sqlite, firebase, supabase free tiers) OK
 
 2. Create Uniform Request
     a. This is for the store manager to select
-        i. Staff Member
-        ii. Uniform Items
-        iii. Quantity
-        iv. Submitting a request
+        i. Staff Member OK
+        ii. Uniform Items OK
+        iii. Quantity OK
+        iv. Submitting a request OK
 
     b. Rules
-        i. We can input roles and set uniform limits
+        i. We can input roles and set uniform limits OK
         ii. A staff member should not be able to request too frequently (we need
-        cooldowns).
-        iii. The requested quantity must not exceed available stock.
-        iv. Low stock should be indicated.
-        v. Quantity must be a positive integer.
+        cooldowns). OK
+        iii. The requested quantity must not exceed available stock. OK
+        iv. Low stock should be indicated. OK
+        v. Quantity must be a positive integer. OK
 
 3. Track Request Status
-    a. Request
-    b. Dispatched
-    c. Arrived
-    d. Collected
-    e. Simple view to see the status of each request.
+    a. Request OK 
+    b. Dispatched OK
+    c. Arrived OK
+    d. Collected OK
+    e. Simple view to see the status of each request. OK
