@@ -25,9 +25,9 @@ A dedicated uniform ordering platform for store managers and dispatch teams to s
 - Adopt authorization system for better security.
 
 
-## Crucial Decision.
+## Crucial Decisions.
 
-- The duplicationa of EAN field in the Stock CSV file was first handled by increase the unit place of a duplicated numbers until it becomes unique. However, this handling way makes the method becomes hardcode. Therefore, composite primary key was used in this case to ensure the uniqueness.
+- The duplication of EAN field in the Stock CSV file was first handled by increase the unit place of a duplicated numbers until it becomes unique. However, this handling way makes the method becomes hardcode. Therefore, composite primary key was used in this case to ensure the uniqueness.
 
 
 - Managers can manually mark a request as Collected to handle real-world cases where the dispatch or delivery service fails to update parcel status. This ensures staff are informed that their uniforms have arrived, while allowing the dispatch team to maintain accurate stock and order tracking for better visibility.
